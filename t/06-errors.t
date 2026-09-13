@@ -20,7 +20,7 @@ like $@, qr/unsupported authentication scheme/, 'unsupported scheme error is exp
 
 my $bad_origin = Uniform::HTTP::Auth->new(credentials => sub { return });
 eval {
-    $bad_origin->authorize(
+    $bad_origin->prepare_authentication(
         challenge_headers => ['Basic realm="x"'],
         origin => 'https://user:pass@example.com/private',
     );
@@ -28,7 +28,7 @@ eval {
 like $@, qr/normalized origin/, 'origin with credentials/path is rejected';
 
 eval {
-    $bad_origin->authorize(
+    $bad_origin->prepare_authentication(
         challenge_headers => ['Basic realm="x"'],
         origin => 'https://bad host.example:443',
     );
@@ -42,7 +42,7 @@ my $digest = Uniform::HTTP::Auth->new(
     },
 );
 eval {
-    $digest->authorize(
+    $digest->prepare_authentication(
         challenge_headers => [
             'Digest realm="x", nonce="n", algorithm=SHA-256, qop="auth-int"'
         ],
