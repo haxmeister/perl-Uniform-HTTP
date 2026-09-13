@@ -19,7 +19,7 @@ any Perl HTTP stack can use it.
   - UTF-8, `userhash`, nonce-count state, and secure cnonce generation
 
 Unknown authentication schemes are parsed and preserved for caller inspection,
-but are not automatically authorized in 0.01.
+but are not automatically used in 0.01.
 
 ## Simple use
 
@@ -37,7 +37,7 @@ my $auth = Uniform::HTTP::Auth->new(
     },
 );
 
-my $result = $auth->authorize(
+my $result = $auth->prepare_authentication(
     challenge_headers => [
         'Digest realm="Members", nonce="abc", qop="auth", algorithm=SHA-256',
         'Basic realm="Members"',
@@ -48,6 +48,10 @@ my $result = $auth->authorize(
 
 my $authorization_value = $result->{value};
 ```
+
+`prepare_authentication()` performs no network I/O. It prepares the complete
+authentication field value that the calling HTTP implementation can use on a
+subsequent request.
 
 The stored credentials are bound to the configured origin. The caller decides
 whether the returned value is sent as `Authorization` or `Proxy-Authorization`,
@@ -86,7 +90,7 @@ my $auth = Uniform::HTTP::Auth->new(
     },
 );
 
-my $result = $auth->authorize(
+my $result = $auth->prepare_authentication(
     challenge_headers => \@www_authenticate,
     origin            => 'https://example.com:443',
     method            => 'GET',
