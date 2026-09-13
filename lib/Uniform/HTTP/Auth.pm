@@ -19,6 +19,13 @@ my %SCHEME_CLASS = (
 sub new {
     my ($class, %args) = @_;
 
+    for my $name (keys %args) {
+        croak "unknown constructor option '$name'"
+            unless $name eq 'schemes'
+                || $name eq 'credentials'
+                || $name eq 'origin';
+    }
+
     my $schemes = exists $args{schemes}
         ? $args{schemes}
         : [qw(digest bearer basic)];
@@ -38,14 +45,26 @@ sub new {
         push @normalized, $name;
     }
 
+    _validate_origin($args{origin}) if exists $args{origin};
+
+    my $credentials = $args{credentials};
     if (exists $args{credentials}) {
-        croak "credentials must be a coderef"
-            unless ref($args{credentials}) eq 'CODE';
+        my $type = ref($credentials);
+        croak "credentials must be a hash reference or coderef"
+            unless $type eq 'HASH' || $type eq 'CODE';
+
+        if ($type eq 'HASH') {
+            croak "origin is required when credentials is a hash reference"
+                unless exists $args{origin};
+            _validate_static_credentials($credentials);
+            $credentials = { %$credentials };
+        }
     }
 
     my $self = bless {
         schemes     => \@normalized,
-        credentials => $args{credentials},
+        credentials => $credentials,
+        origin      => $args{origin},
         digest      => Uniform::HTTP::Auth::Digest->new,
     }, $class;
 
@@ -118,13 +137,25 @@ sub select {
 sub authorize {
     my ($self, %args) = @_;
 
-    croak "authorize() requires a credentials provider"
-        unless ref($self->{credentials}) eq 'CODE';
+    croak "authorize() requires credentials"
+        unless ref($self->{credentials}) eq 'HASH'
+            || ref($self->{credentials}) eq 'CODE';
 
     croak "challenge_headers must be an array reference"
         unless ref($args{challenge_headers}) eq 'ARRAY';
 
-    _validate_origin($args{origin});
+    my $origin;
+    if (exists $args{origin}) {
+        _validate_origin($args{origin});
+        if (defined($self->{origin}) && $args{origin} ne $self->{origin}) {
+            croak "origin does not match the origin bound at construction";
+        }
+        $origin = $args{origin};
+    }
+    else {
+        $origin = $self->{origin};
+        _validate_origin($origin);
+    }
 
     my $challenges = $self->parse_challenges(@{ $args{challenge_headers} });
 
@@ -140,17 +171,26 @@ sub authorize {
         my $challenge = $handler->select_challenge(\@candidates);
         next unless $challenge;
 
-        my $need = {
+        my $context = {
             scheme    => $scheme,
-            origin    => $args{origin},
+            origin    => $origin,
             realm     => $challenge->{params}{realm},
             challenge => $challenge,
         };
 
-        my $credentials = $self->{credentials}->($need);
-        next unless defined $credentials;
-        croak "credentials provider must return a hash reference or undef"
-            unless ref($credentials) eq 'HASH';
+        my $credentials;
+        if (ref($self->{credentials}) eq 'CODE') {
+            $credentials = $self->{credentials}->($context);
+            next unless defined $credentials;
+            croak "credentials callback must return a hash reference or undef"
+                unless ref($credentials) eq 'HASH';
+        }
+        else {
+            $credentials = _static_credentials_for_scheme(
+                $self->{credentials}, $scheme,
+            );
+            next unless $credentials;
+        }
 
         my $value;
         if ($scheme eq 'basic') {
@@ -177,7 +217,7 @@ sub authorize {
             my %digest_args = (
                 %$credentials,
                 challenge      => $challenge,
-                origin         => $args{origin},
+                origin         => $origin,
                 method         => $args{method},
                 request_target => $args{request_target},
             );
@@ -204,10 +244,45 @@ sub _handler {
     return $SCHEME_CLASS{$scheme};
 }
 
+sub _validate_static_credentials {
+    my ($credentials) = @_;
+
+    my $has_token = exists $credentials->{token};
+    my $has_username = exists $credentials->{username};
+    my $has_password = exists $credentials->{password};
+
+    croak "static credentials require both username and password"
+        if $has_username != $has_password;
+    croak "static credentials require token or username/password"
+        unless $has_token || ($has_username && $has_password);
+
+    for my $field (qw(token username password)) {
+        next unless exists $credentials->{$field};
+        croak "credential '$field' must be defined"
+            unless defined $credentials->{$field};
+        croak "credential '$field' must be a plain scalar"
+            if ref($credentials->{$field});
+    }
+}
+
+sub _static_credentials_for_scheme {
+    my ($credentials, $scheme) = @_;
+
+    if ($scheme eq 'bearer') {
+        return unless exists $credentials->{token};
+    }
+    else {
+        return unless exists($credentials->{username})
+            && exists($credentials->{password});
+    }
+
+    return { %$credentials };
+}
+
 sub _require_fields {
     my ($credentials, @fields) = @_;
     for my $field (@fields) {
-        croak "credentials provider result requires '$field'"
+        croak "credentials require '$field'"
             unless exists($credentials->{$field}) && defined($credentials->{$field});
         croak "credential '$field' must be a plain scalar"
             if ref($credentials->{$field});
@@ -436,21 +511,10 @@ Uniform::HTTP::Auth - Framework-agnostic HTTP authentication for Perl
     use Uniform::HTTP::Auth;
 
     my $auth = Uniform::HTTP::Auth->new(
-        schemes => [qw(digest bearer basic)],
-        credentials => sub {
-            my ($need) = @_;
-
-            return {
-                token => $api_token,
-            } if $need->{scheme} eq 'bearer';
-
-            return {
-                username => 'user',
-                password => 'secret',
-            } if $need->{scheme} eq 'digest'
-              || $need->{scheme} eq 'basic';
-
-            return;
+        origin => 'https://example.com:443',
+        credentials => {
+            username => 'user',
+            password => 'secret',
         },
     );
 
@@ -459,7 +523,6 @@ Uniform::HTTP::Auth - Framework-agnostic HTTP authentication for Perl
             'Digest realm="Members", nonce="abc", qop="auth", algorithm=SHA-256',
             'Basic realm="Members"',
         ],
-        origin         => 'https://example.com:443',
         method         => 'GET',
         request_target => '/private',
     );
@@ -476,9 +539,13 @@ C<Uniform::HTTP::Auth> implements HTTP authentication mechanics without
 requiring an HTTP client, server, framework, event loop, request object, or
 transaction abstraction.
 
-It parses HTTP authentication challenges, selects a supported scheme, asks an
-application-supplied callback for credentials, and constructs an authentication
-field value.  All public inputs and outputs are plain Perl data.
+For ordinary applications, construct an auth object with an origin and a set of
+credentials.  The object remembers those credentials and uses them later when
+that origin presents a supported authentication challenge.
+
+For HTTP libraries or applications with dynamic credential stores,
+C<credentials> may instead be a callback that receives the authentication
+context and returns credentials for that protection space.
 
 The distribution implements Basic (RFC 7617), Bearer (RFC 6750), and Digest
 (RFC 7616).  Unknown schemes are parsed and preserved for introspection but are
@@ -498,11 +565,49 @@ C<Authorization> and C<Proxy-Authorization>.
 
 =head2 new
 
-    my $auth = Uniform::HTTP::Auth->new(%options);
+    my $auth = Uniform::HTTP::Auth->new(
+        origin => 'https://example.com:443',
+        credentials => {
+            username => 'user',
+            password => 'secret',
+        },
+    );
 
 Supported options are:
 
 =over 4
+
+=item origin
+
+A normalized origin such as C<https://example.com:443>.  When static
+credentials are supplied, C<origin> is required and binds those credentials to
+that origin.  Calls to C<authorize()> may then omit C<origin>.
+
+A callback-based credential source may omit C<origin> and supply it per
+C<authorize()> call instead.  If an origin is supplied at construction, it is
+also treated as a binding and a different per-call origin is rejected.
+
+=item credentials
+
+Usually a hash reference containing credentials to retain for later use.
+Basic and Digest use:
+
+    credentials => {
+        username => 'user',
+        password => 'secret',
+    }
+
+Bearer uses:
+
+    credentials => {
+        token => $token,
+    }
+
+A hash may contain both forms.  Uniform automatically skips a scheme when the
+stored credentials do not contain the fields that scheme needs.
+
+For dynamic lookup, C<credentials> may instead be a coderef.  See
+L</DYNAMIC CREDENTIAL LOOKUP>.
 
 =item schemes
 
@@ -514,12 +619,9 @@ order.  Scheme names are case-insensitive.  The default is:
 The order is a convenience policy, not a universal security ranking.  Supply an
 explicit order when an application has its own policy.
 
-=item credentials
-
-A coderef used by C<authorize()> to obtain credentials.  Parsing and selection
-can be used without a credential provider.
-
 =back
+
+Unknown constructor options are rejected.
 
 =head1 METHODS
 
@@ -559,29 +661,35 @@ from the network.
     my $challenge = $auth->select($challenges);
 
 Selects the best usable challenge according to the configured scheme order.
-The method does not call the credential provider.  It returns undef if no
-supported well-formed challenge can be used.
+The method does not obtain credentials.  It returns undef if no supported
+well-formed challenge can be used.
 
 When a field contains multiple Digest challenges, Digest-specific algorithm and
 qop selection remains the responsibility of L<Uniform::HTTP::Auth::Digest>.
 
 =head2 authorize
 
+For an object with a bound origin:
+
     my $result = $auth->authorize(
         challenge_headers => \@authenticate_values,
-        origin            => 'https://example.com:443',
         method            => 'GET',
         request_target    => '/private?x=1',
         entity_body       => $body,
     );
 
+A callback-based object without a bound origin supplies one per call:
+
+    my $result = $auth->authorize(
+        challenge_headers => \@authenticate_values,
+        origin            => 'https://example.com:443',
+        method            => 'GET',
+        request_target    => '/private?x=1',
+    );
+
 Performs parsing, scheme selection, credential lookup, and authentication value
 construction.  It tries configured schemes in order and can fall through to a
-later scheme when the credential provider returns undef.
-
-C<origin> is required and must be a normalized origin such as
-C<https://example.com:443>.  It identifies the HTTP protection space together
-with the challenge realm.  Uniform does not derive or route origins.
+later scheme when suitable credentials are unavailable.
 
 C<method> and C<request_target> are required only when Digest is selected.
 C<entity_body> is used only for Digest C<qop=auth-int> and must be a plain scalar
@@ -598,9 +706,50 @@ On success, the method returns:
 C<value> is the complete authentication field value without a header name.
 Returns undef when no supported challenge can be satisfied.
 
-=head1 CREDENTIAL PROVIDER
+=head1 STATIC CREDENTIALS
 
-The credential provider is called with one plain hash reference:
+Static credentials are the normal application API.  They are copied into the
+auth object at construction and bound to the configured origin.
+
+Username/password credentials can satisfy Basic or Digest challenges:
+
+    my $auth = Uniform::HTTP::Auth->new(
+        origin => 'https://example.com:443',
+        credentials => {
+            username => 'user',
+            password => 'secret',
+        },
+    );
+
+A token can satisfy Bearer challenges:
+
+    my $auth = Uniform::HTTP::Auth->new(
+        origin => 'https://api.example.com:443',
+        credentials => {
+            token => $token,
+        },
+    );
+
+Static credentials are never used for a different origin.  To manage many
+origins with one object, use dynamic credential lookup instead.
+
+=head1 DYNAMIC CREDENTIAL LOOKUP
+
+HTTP libraries and applications with credential stores can supply a callback:
+
+    my $auth = Uniform::HTTP::Auth->new(
+        credentials => sub {
+            my ($context) = @_;
+
+            return $store->lookup(
+                $context->{origin},
+                $context->{realm},
+                $context->{scheme},
+            );
+        },
+    );
+
+The callback receives one plain hash reference:
 
     {
         scheme    => 'digest',
@@ -625,14 +774,18 @@ invalid return types are programmer errors and throw exceptions.
 
 =head1 ERROR MODEL
 
-Programmer errors, such as invalid argument types or malformed credential
-provider results, throw exceptions with C<croak>.
+Programmer errors, such as invalid constructor options, invalid argument types,
+or malformed credential callback results, throw exceptions with C<croak>.
 
 Malformed remote challenge data is represented in the returned challenge data
-and ignored by automatic selection.  A credential provider returning undef is
+and ignored by automatic selection.  A credential callback returning undef is
 not an error.
 
 =head1 SECURITY NOTES
+
+Static credentials are bound to one normalized origin.  This prevents an auth
+object created for one service from silently offering those credentials to a
+different origin.
 
 Basic credentials are only Base64 encoded and should normally be sent over a
 secure transport such as TLS.
