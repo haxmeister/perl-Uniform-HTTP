@@ -1,0 +1,13 @@
+Revision history for Uniform-HTTP-Auth
+
+0.01  2026-09-13
+    - Initial implementation.
+    - Add transport- and framework-agnostic challenge parsing and scheme selection.
+    - Add credential-provider orchestration.
+    - Add Basic authentication per RFC 7617.
+    - Add Bearer authentication construction per RFC 6750.
+    - Add Digest authentication per RFC 7616, including MD5, SHA-256,
+      SHA-512/256, session variants, qop=auth/auth-int, userhash,
+      cryptographically secure cnonce generation, and nonce-count state.
+    - Preserve unknown authentication schemes for caller introspection.
+    - Represent malformed remote challenges as data rather than exceptions.
