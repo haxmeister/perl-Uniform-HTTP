@@ -18,9 +18,6 @@ WriteMakefile(
         'MIME::Base64'       => 0,
         'Unicode::Normalize' => 0,
     },
-    TEST_REQUIRES => {
-        'Test::More' => 0,
-    },
     META_MERGE => {
         'meta-spec' => { version => 2 },
         resources => {
