@@ -3,8 +3,10 @@ Revision history for Uniform-HTTP-Auth
 0.01  2026-09-13
     - Initial release.
     - Add transport-, framework-, and event-loop-agnostic HTTP authentication.
-    - Add challenge parsing, malformed-input reporting, scheme selection, and
-      credential-provider orchestration.
+    - Add challenge parsing, malformed-input reporting, and scheme selection.
+    - Add a simple origin-bound stored-credentials constructor for normal
+      applications, plus callback-based dynamic credential lookup for reusable
+      HTTP stacks and credential stores.
     - Add Basic authentication per RFC 7617, including UTF-8 charset handling.
     - Add Bearer authentication construction per RFC 6750.
     - Add Digest authentication per RFC 7616, including MD5, SHA-256,
