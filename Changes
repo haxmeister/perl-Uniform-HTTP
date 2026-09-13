@@ -1,13 +1,18 @@
 Revision history for Uniform-HTTP-Auth
 
 0.01  2026-09-13
-    - Initial implementation.
-    - Add transport- and framework-agnostic challenge parsing and scheme selection.
-    - Add credential-provider orchestration.
-    - Add Basic authentication per RFC 7617.
+    - Initial release.
+    - Add transport-, framework-, and event-loop-agnostic HTTP authentication.
+    - Add challenge parsing, malformed-input reporting, scheme selection, and
+      credential-provider orchestration.
+    - Add Basic authentication per RFC 7617, including UTF-8 charset handling.
     - Add Bearer authentication construction per RFC 6750.
     - Add Digest authentication per RFC 7616, including MD5, SHA-256,
-      SHA-512/256, session variants, qop=auth/auth-int, userhash,
+      SHA-512/256, session variants, qop=auth/auth-int, UTF-8, userhash,
       cryptographically secure cnonce generation, and nonce-count state.
+    - Isolate Digest state by HTTP protection space so unrelated origins do not
+      share nonce counts or cnonces.
     - Preserve unknown authentication schemes for caller introspection.
     - Represent malformed remote challenges as data rather than exceptions.
+    - Add complete public API POD, release documentation, distribution
+      packaging, and CI/disttest coverage for Perl 5.16 and current Perl.
