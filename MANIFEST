@@ -12,7 +12,7 @@ lib/Uniform/HTTP/Auth/Digest.pm
 t/01-basic.t
 t/02-bearer.t
 t/03-parse-select.t
-t/04-authorize.t
+t/04-prepare-authentication.t
 t/05-digest.t
 t/06-errors.t
 t/07-digest-stale.t
