@@ -1,6 +1,6 @@
-# Uniform::HTTP::Auth 0.01 API Specification
+# Uniform::HTTP::Auth 0.02 API Specification
 
-Status: release contract for version 0.01.
+Status: release contract for version 0.02. The 0.01 API remains supported.
 
 ## Purpose
 
@@ -39,7 +39,7 @@ authentication mechanics.
 
 ## Modules
 
-Version 0.01 contains:
+Version 0.02 contains:
 
 ```text
 Uniform::HTTP::Auth
@@ -48,18 +48,18 @@ Uniform::HTTP::Auth::Bearer
 Uniform::HTTP::Auth::Digest
 ```
 
-All are part of the same `Uniform-HTTP-Auth` distribution.
+All are part of the `Uniform-HTTP` distribution.
 
 ## Supported schemes
 
-Version 0.01 implements:
+Version 0.02 implements:
 
 - Basic, RFC 7617
 - Bearer, RFC 6750
 - Digest, RFC 7616
 
 Unknown schemes are parsed and exposed but are not automatically used.
-There is no public custom-scheme plugin ABI in 0.01.
+There is no public custom-scheme plugin ABI in 0.02.
 
 ## Construction
 
@@ -270,6 +270,12 @@ identifies the HTTP protection space. Uniform does not derive or route origins.
 `entity_body` is used only for Digest `qop=auth-int`; when supplied it must be a
 defined plain scalar.
 
+The caller may alternatively supply `request` with an object implementing the
+`Uniform::HTTP::Request` contract. Auth reads `method()` and `target()`, and it
+reads `body()` only when `has_buffered_body()` is true. Explicit `method`,
+`request_target`, and `entity_body` arguments take precedence. No body stream
+is consumed implicitly.
+
 ## Static credential contract
 
 Static credentials are copied into the auth object at construction and are
@@ -329,7 +335,7 @@ A Basic challenge requires `realm`. If `charset` is present, its only supported
 value is `UTF-8`, case-insensitively.
 
 With `charset=UTF-8`, username and password are normalized to NFC and encoded as
-UTF-8 before Base64 encoding. Without `charset`, version 0.01 accepts ASCII
+UTF-8 before Base64 encoding. Without `charset`, version 0.02 accepts ASCII
 credentials only rather than guessing the RFC 7617 default encoding.
 
 Usernames may not contain a colon. Username and password may not contain HTTP
@@ -361,7 +367,7 @@ Supported qop values:
 - `auth`
 - `auth-int`
 
-When both are offered, 0.01 prefers `auth`.
+When both are offered, 0.02 prefers `auth`.
 
 Digest state includes nonce count and cnonce. Through the root API, state is
 isolated by origin, realm, username, and nonce so identical opaque nonce strings
@@ -406,9 +412,9 @@ stack:
 The distribution does not depend on LWP, Mojolicious, PSGI, PAGI,
 Linux::Event, or another HTTP client/server framework.
 
-## Explicit non-goals for 0.01
+## Explicit non-goals for 0.02
 
-Version 0.01 does not own:
+Version 0.02 does not own:
 
 - HTTP retries or request replay
 - connections or transaction state
@@ -426,7 +432,7 @@ Version 0.01 does not own:
 
 ## References
 
-The 0.01 implementation is governed primarily by:
+The 0.02 implementation is governed primarily by:
 
 - RFC 9110, HTTP Semantics / HTTP Authentication Framework
 - RFC 7617, Basic HTTP Authentication

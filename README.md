@@ -1,30 +1,57 @@
-# Uniform::HTTP::Auth
+# Uniform::HTTP
 
-Unified, framework-agnostic HTTP authentication for Perl.
+Framework-neutral HTTP messages and authentication for Perl, independent of
+transports, event loops, and web frameworks.
 
-`Uniform::HTTP::Auth` implements HTTP authentication mechanics without depending
-on an HTTP client, server, framework, event loop, request object, or transaction
-abstraction. It deals in plain HTTP authentication data and plain Perl values so
-any Perl HTTP stack can use it.
+`Uniform::HTTP` provides a small semantic layer that HTTP clients, servers,
+frameworks, middleware, and applications can share without adopting one
+another's object model.
 
-## Supported schemes
+## Modules
 
-- Basic (RFC 7617)
-- Bearer (RFC 6750)
-- Digest (RFC 7616)
-  - MD5 and MD5-sess for compatibility
-  - SHA-256 and SHA-256-sess
-  - SHA-512/256 and SHA-512/256-sess
-  - `qop=auth` and `qop=auth-int`
-  - UTF-8, `userhash`, nonce-count state, and secure cnonce generation
+- `Uniform::HTTP::Message` represents common message state.
+- `Uniform::HTTP::Request` adds method and exact request-target semantics.
+- `Uniform::HTTP::Response` adds status and optional reason semantics.
+- `Uniform::HTTP::Auth` implements Basic, Bearer, and Digest authentication.
 
-Unknown authentication schemes are parsed and preserved for caller inspection,
-but are not automatically used in 0.01.
+The canonical message classes are mutable, lossless, detached objects.
+Framework adapters are separate distributions and implement the same contract.
 
-## Simple use
+## Request and response objects
 
-For an ordinary application, give the auth object the origin and credentials it
-will use later:
+```perl
+use Uniform::HTTP::Request;
+use Uniform::HTTP::Response;
+
+my $request = Uniform::HTTP::Request->new(
+    method  => 'POST',
+    target  => '/items?draft=1',
+    version => '1.1',
+    headers => [
+        [ 'Content-Type', 'application/json' ],
+        [ 'X-Trace',      'one' ],
+        [ 'X-Trace',      'two' ],
+    ],
+    body => '{"name":"example"}',
+);
+
+my $response = Uniform::HTTP::Response->new(
+    status  => 201,
+    reason  => 'Created',
+    headers => [ [ 'Content-Type', 'application/json' ] ],
+    body    => '{}',
+);
+```
+
+Headers are an ordered list of field occurrences. Duplicate fields and
+original field-name spelling are preserved. Lookup is ASCII case-insensitive,
+and repeated values are never silently comma-joined.
+
+Bodies and header values are bytes. A message never consumes an input stream,
+filehandle, callback, PSGI input object, or PAGI body source merely because
+`body()` was called.
+
+## Authentication
 
 ```perl
 use Uniform::HTTP::Auth;
@@ -42,130 +69,57 @@ my $result = $auth->prepare_authentication(
         'Digest realm="Members", nonce="abc", qop="auth", algorithm=SHA-256',
         'Basic realm="Members"',
     ],
-    method         => 'GET',
-    request_target => '/private',
+    request => $request,
 );
 
 my $authorization_value = $result->{value};
 ```
 
-`prepare_authentication()` performs no network I/O. It prepares the complete
-authentication field value that the calling HTTP implementation can use on a
-subsequent request.
+`prepare_authentication()` also accepts explicit `method`, `request_target`,
+and `entity_body` values, preserving the API released in
+`Uniform-HTTP-Auth` 0.01. It performs no network I/O and does not retry or send
+the request.
 
-The stored credentials are bound to the configured origin. The caller decides
-whether the returned value is sent as `Authorization` or `Proxy-Authorization`,
-and whether or how the HTTP request is retried.
+Supported authentication schemes are:
 
-Bearer credentials are equally direct:
+- Basic (RFC 7617)
+- Bearer (RFC 6750)
+- Digest (RFC 7616), including MD5, SHA-256, SHA-512/256, session variants,
+  `qop=auth`, `qop=auth-int`, UTF-8, `userhash`, and nonce-count state
 
-```perl
-my $auth = Uniform::HTTP::Auth->new(
-    origin => 'https://api.example.com:443',
-    credentials => {
-        token => $token,
-    },
-);
-```
-
-The default scheme preference is Digest, Bearer, Basic. A stored credential set
-is only considered for schemes it can satisfy, so username/password credentials
-can satisfy Digest or Basic and a token can satisfy Bearer.
-
-## Dynamic credential lookup
-
-A generic HTTP library or an application with a credential store can use a
-callback instead of storing one credential set:
-
-```perl
-my $auth = Uniform::HTTP::Auth->new(
-    credentials => sub {
-        my ($context) = @_;
-
-        return $store->lookup(
-            $context->{origin},
-            $context->{realm},
-            $context->{scheme},
-        );
-    },
-);
-
-my $result = $auth->prepare_authentication(
-    challenge_headers => \@www_authenticate,
-    origin            => 'https://example.com:443',
-    method            => 'GET',
-    request_target    => '/private',
-);
-```
-
-The callback receives authentication-only context:
-
-```perl
-{
-    scheme    => 'digest',
-    origin    => 'https://example.com:443',
-    realm     => 'Members',
-    challenge => $parsed_challenge,
-}
-```
-
-Return `undef` when credentials are unavailable. Return a hash reference with
-`username` and `password` for Basic/Digest, or `token` for Bearer.
-
-## Scheme policy
-
-The `schemes` constructor option enables schemes and sets their preference order:
-
-```perl
-my $auth = Uniform::HTTP::Auth->new(
-    origin => 'https://api.example.com:443',
-    schemes => [qw(bearer basic)],
-    credentials => {
-        token => $token,
-    },
-);
-```
-
-Omit `schemes` to use the default `[qw(digest bearer basic)]` policy.
-
-## Boundary
+## Ownership boundary
 
 Uniform owns:
 
-- challenge parsing
-- supported-scheme discovery and selection
-- credential lookup
-- Basic construction
-- Bearer construction
-- Digest calculation and nonce state
+- lossless HTTP message semantics
+- exact request targets when supplied by the source
+- buffered body state
+- capability reporting for adapters
+- authentication challenge parsing and scheme selection
+- Basic, Bearer, and Digest value construction
 
 The calling HTTP implementation owns:
 
-- receiving 401 and 407 responses
-- request replay and retry policy
-- connections and transaction lifecycle
-- proxy routing
-- callbacks, Futures, promises, or other completion APIs
+- parsing and serializing wire protocols
+- sockets, TLS, connections, and transaction state
+- incremental request and response body transfer
+- cancellation, backpressure, retry, redirect, and replay policy
+- HTTP/1 framing, HTTP/2 streams, and HTTP/3 streams
+- framework response commitment and lifecycle
 
-## Lower-level use
+## Adapters
 
-The root object also exposes parsing and selection independently:
+Adapters are explicit and separately installed. A core application never
+runtime-probes for Mojo, PSGI, PAGI, Dancer2, Catalyst, Linux::Event, or
+`HTTP::Message`.
 
-```perl
-my $challenges = $auth->parse_challenges(@www_authenticate_values);
-my $selected   = $auth->select($challenges);
-```
-
-Scheme-specific helpers are available as:
-
-- `Uniform::HTTP::Auth::Basic`
-- `Uniform::HTTP::Auth::Bearer`
-- `Uniform::HTTP::Auth::Digest`
+See `docs/MESSAGE-SPEC.md` for the normative message contract and
+`docs/ADAPTERS.md` for adapter requirements.
 
 ## Installation
 
 ```text
-cpanm Uniform::HTTP::Auth
+cpanm Uniform::HTTP
 ```
 
 For a checkout:
@@ -176,10 +130,11 @@ make
 make test
 ```
 
-## Documentation
+## Migration from Uniform-HTTP-Auth
 
-The module POD documents the public API. `docs/API-SPEC.md` records the 0.01
-ownership boundary and contract in one place.
+`Uniform::HTTP::Auth` keeps its module name and public 0.01 API. Beginning with
+version 0.02 it is released as part of `Uniform-HTTP`. Code that loads or
+declares a dependency on `Uniform::HTTP::Auth` does not need to change.
 
 ## License
 

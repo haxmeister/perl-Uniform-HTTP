@@ -1,7 +1,22 @@
-Revision history for Uniform-HTTP-Auth
+Revision history for Uniform-HTTP
+
+0.02  2026-09-13
+    - Rename the distribution from Uniform-HTTP-Auth to Uniform-HTTP.
+    - Preserve the Uniform::HTTP::Auth module name and its 0.01 public API.
+    - Add canonical Uniform::HTTP::Message, Request, and Response objects.
+    - Preserve duplicate headers, original field names, and message order.
+    - Add explicit body, completeness, mutability, target-fidelity, and
+      header-fidelity capability methods for framework adapters.
+    - Define byte-string validation without implicit character encoding.
+    - Let prepare_authentication() consume a Uniform request contract while
+      retaining explicit method, request_target, and entity_body arguments.
+    - Keep transports, parsing, serialization, streaming, retries, and
+      framework lifecycle outside the distribution boundary.
+    - Add a normative message specification, adapter guide, and comprehensive
+      canonical-object and Auth integration tests.
 
 0.01  2026-09-13
-    - Initial release.
+    - Initial release as Uniform-HTTP-Auth.
     - Add transport-, framework-, and event-loop-agnostic HTTP authentication.
     - Add challenge parsing, malformed-input reporting, and scheme selection.
     - Add prepare_authentication() to prepare authentication field values without

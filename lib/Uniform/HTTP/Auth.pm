@@ -8,7 +8,7 @@ use Uniform::HTTP::Auth::Basic ();
 use Uniform::HTTP::Auth::Bearer ();
 use Uniform::HTTP::Auth::Digest ();
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 my %SCHEME_CLASS = (
     basic  => 'Uniform::HTTP::Auth::Basic',
@@ -143,6 +143,25 @@ sub prepare_authentication {
 
     croak "challenge_headers must be an array reference"
         unless ref($args{challenge_headers}) eq 'ARRAY';
+
+    if (exists $args{request}) {
+        my $request = $args{request};
+        croak "request must implement method(), target(), and has_buffered_body()"
+            unless ref($request)
+                && $request->can('method')
+                && $request->can('target')
+                && $request->can('has_buffered_body');
+
+        $args{method} = $request->method
+            unless exists $args{method};
+        $args{request_target} = $request->target
+            unless exists $args{request_target};
+        if (!exists($args{entity_body}) && $request->has_buffered_body) {
+            croak "request reports a buffered body but does not implement body()"
+                unless $request->can('body');
+            $args{entity_body} = $request->body;
+        }
+    }
 
     my $origin;
     if (exists $args{origin}) {
@@ -549,7 +568,7 @@ context and returns credentials for that protection space.
 
 The distribution implements Basic (RFC 7617), Bearer (RFC 6750), and Digest
 (RFC 7616).  Unknown schemes are parsed and preserved for introspection but are
-not automatically used in version 0.01.
+not automatically used in version 0.02.
 
 =head1 OWNERSHIP BOUNDARY
 
@@ -701,6 +720,19 @@ C<method> and C<request_target> are required only when Digest is selected.
 C<entity_body> is used only for Digest C<qop=auth-int> and must be a plain scalar
 when supplied.
 
+Instead of those three values, a caller may supply any object implementing the
+L<Uniform::HTTP::Request> contract:
+
+    my $result = $auth->prepare_authentication(
+        challenge_headers => \@authenticate_values,
+        request           => $request,
+    );
+
+Explicit C<method>, C<request_target>, or C<entity_body> arguments take
+precedence over values from C<request>. The body is read only when the request
+reports true from C<has_buffered_body()>; authentication never consumes an
+incremental body source.
+
 On success, the method returns:
 
     {
@@ -808,8 +840,8 @@ schemes at construction time.
 L<Uniform::HTTP::Auth::Basic>, L<Uniform::HTTP::Auth::Bearer>,
 L<Uniform::HTTP::Auth::Digest>, RFC 9110, RFC 7617, RFC 7616, RFC 6750.
 
-The distribution also includes F<docs/API-SPEC.md> with the version 0.01 API
-contract and ownership boundary.
+The distribution also includes F<docs/AUTH-SPEC.md> with the version 0.02 Auth
+contract and F<docs/MESSAGE-SPEC.md> with the shared request contract.
 
 =head1 AUTHOR
 
