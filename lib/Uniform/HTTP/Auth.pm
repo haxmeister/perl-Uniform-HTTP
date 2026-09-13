@@ -134,10 +134,10 @@ sub select {
     return;
 }
 
-sub authorize {
+sub prepare_authentication {
     my ($self, %args) = @_;
 
-    croak "authorize() requires credentials"
+    croak "prepare_authentication() requires credentials"
         unless ref($self->{credentials}) eq 'HASH'
             || ref($self->{credentials}) eq 'CODE';
 
@@ -518,7 +518,7 @@ Uniform::HTTP::Auth - Framework-agnostic HTTP authentication for Perl
         },
     );
 
-    my $result = $auth->authorize(
+    my $result = $auth->prepare_authentication(
         challenge_headers => [
             'Digest realm="Members", nonce="abc", qop="auth", algorithm=SHA-256',
             'Basic realm="Members"',
@@ -549,7 +549,7 @@ context and returns credentials for that protection space.
 
 The distribution implements Basic (RFC 7617), Bearer (RFC 6750), and Digest
 (RFC 7616).  Unknown schemes are parsed and preserved for introspection but are
-not automatically authorized in version 0.01.
+not automatically used in version 0.01.
 
 =head1 OWNERSHIP BOUNDARY
 
@@ -560,6 +560,10 @@ Digest nonce state.
 The calling HTTP implementation owns receiving 401 or 407 responses, request
 replay, retries, connections, proxy routing, and the choice between
 C<Authorization> and C<Proxy-Authorization>.
+
+C<prepare_authentication()> performs no network I/O. It only prepares the
+authentication field value that the caller may use for a subsequent HTTP
+request.
 
 =head1 CONSTRUCTOR
 
@@ -581,11 +585,12 @@ Supported options are:
 
 A normalized origin such as C<https://example.com:443>.  When static
 credentials are supplied, C<origin> is required and binds those credentials to
-that origin.  Calls to C<authorize()> may then omit C<origin>.
+that origin.  Calls to C<prepare_authentication()> may then omit C<origin>.
 
 A callback-based credential source may omit C<origin> and supply it per
-C<authorize()> call instead.  If an origin is supplied at construction, it is
-also treated as a binding and a different per-call origin is rejected.
+C<prepare_authentication()> call instead.  If an origin is supplied at
+construction, it is also treated as a binding and a different per-call origin
+is rejected.
 
 =item credentials
 
@@ -667,11 +672,11 @@ well-formed challenge can be used.
 When a field contains multiple Digest challenges, Digest-specific algorithm and
 qop selection remains the responsibility of L<Uniform::HTTP::Auth::Digest>.
 
-=head2 authorize
+=head2 prepare_authentication
 
 For an object with a bound origin:
 
-    my $result = $auth->authorize(
+    my $result = $auth->prepare_authentication(
         challenge_headers => \@authenticate_values,
         method            => 'GET',
         request_target    => '/private?x=1',
@@ -680,7 +685,7 @@ For an object with a bound origin:
 
 A callback-based object without a bound origin supplies one per call:
 
-    my $result = $auth->authorize(
+    my $result = $auth->prepare_authentication(
         challenge_headers => \@authenticate_values,
         origin            => 'https://example.com:443',
         method            => 'GET',
@@ -689,7 +694,8 @@ A callback-based object without a bound origin supplies one per call:
 
 Performs parsing, scheme selection, credential lookup, and authentication value
 construction.  It tries configured schemes in order and can fall through to a
-later scheme when suitable credentials are unavailable.
+later scheme when suitable credentials are unavailable.  It does not send a
+request or otherwise perform network I/O.
 
 C<method> and C<request_target> are required only when Digest is selected.
 C<entity_body> is used only for Digest C<qop=auth-int> and must be a plain scalar
