@@ -13,7 +13,7 @@ my $basic = Uniform::HTTP::Auth->new(
     },
 );
 
-my $basic_result = $basic->authorize(
+my $basic_result = $basic->prepare_authentication(
     challenge_headers => ['Basic realm="Members"'],
 );
 
@@ -28,7 +28,7 @@ my $bearer = Uniform::HTTP::Auth->new(
     },
 );
 
-my $bearer_result = $bearer->authorize(
+my $bearer_result = $bearer->prepare_authentication(
     challenge_headers => [
         'Digest realm="api", nonce="abc", qop="auth", algorithm=SHA-256, Bearer realm="api"',
     ],
@@ -50,7 +50,7 @@ eval {
 like $@, qr/origin is required/, 'static credentials require a bound origin';
 
 eval {
-    $basic->authorize(
+    $basic->prepare_authentication(
         challenge_headers => ['Basic realm="Members"'],
         origin => 'https://other.example.com:443',
     );
