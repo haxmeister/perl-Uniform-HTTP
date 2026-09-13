@@ -21,26 +21,19 @@ any Perl HTTP stack can use it.
 Unknown authentication schemes are parsed and preserved for caller inspection,
 but are not automatically authorized in 0.01.
 
-## Example
+## Simple use
+
+For an ordinary application, give the auth object the origin and credentials it
+will use later:
 
 ```perl
 use Uniform::HTTP::Auth;
 
 my $auth = Uniform::HTTP::Auth->new(
-    schemes => [qw(digest bearer basic)],
-    credentials => sub {
-        my ($need) = @_;
-
-        return { token => $token }
-            if $need->{scheme} eq 'bearer';
-
-        return {
-            username => 'user',
-            password => 'secret',
-        } if $need->{scheme} eq 'digest'
-          || $need->{scheme} eq 'basic';
-
-        return;
+    origin => 'https://example.com:443',
+    credentials => {
+        username => 'user',
+        password => 'secret',
     },
 );
 
@@ -49,7 +42,6 @@ my $result = $auth->authorize(
         'Digest realm="Members", nonce="abc", qop="auth", algorithm=SHA-256',
         'Basic realm="Members"',
     ],
-    origin         => 'https://example.com:443',
     method         => 'GET',
     request_target => '/private',
 );
@@ -57,29 +49,50 @@ my $result = $auth->authorize(
 my $authorization_value = $result->{value};
 ```
 
-The caller decides whether that value is sent as `Authorization` or
-`Proxy-Authorization`, and whether or how the HTTP request is retried.
+The stored credentials are bound to the configured origin. The caller decides
+whether the returned value is sent as `Authorization` or `Proxy-Authorization`,
+and whether or how the HTTP request is retried.
 
-## Boundary
+Bearer credentials are equally direct:
 
-Uniform owns:
+```perl
+my $auth = Uniform::HTTP::Auth->new(
+    origin => 'https://api.example.com:443',
+    credentials => {
+        token => $token,
+    },
+);
+```
 
-- challenge parsing
-- supported-scheme discovery and selection
-- credential-provider orchestration
-- Basic construction
-- Bearer construction
-- Digest calculation and nonce state
+The default scheme preference is Digest, Bearer, Basic. A stored credential set
+is only considered for schemes it can satisfy, so username/password credentials
+can satisfy Digest or Basic and a token can satisfy Bearer.
 
-The calling HTTP implementation owns:
+## Dynamic credential lookup
 
-- receiving 401 and 407 responses
-- request replay and retry policy
-- connections and transaction lifecycle
-- proxy routing
-- callbacks, Futures, promises, or other completion APIs
+A generic HTTP library or an application with a credential store can use a
+callback instead of storing one credential set:
 
-## Credential provider
+```perl
+my $auth = Uniform::HTTP::Auth->new(
+    credentials => sub {
+        my ($context) = @_;
+
+        return $store->lookup(
+            $context->{origin},
+            $context->{realm},
+            $context->{scheme},
+        );
+    },
+);
+
+my $result = $auth->authorize(
+    challenge_headers => \@www_authenticate,
+    origin            => 'https://example.com:443',
+    method            => 'GET',
+    request_target    => '/private',
+);
+```
 
 The callback receives authentication-only context:
 
@@ -94,6 +107,41 @@ The callback receives authentication-only context:
 
 Return `undef` when credentials are unavailable. Return a hash reference with
 `username` and `password` for Basic/Digest, or `token` for Bearer.
+
+## Scheme policy
+
+The `schemes` constructor option enables schemes and sets their preference order:
+
+```perl
+my $auth = Uniform::HTTP::Auth->new(
+    origin => 'https://api.example.com:443',
+    schemes => [qw(bearer basic)],
+    credentials => {
+        token => $token,
+    },
+);
+```
+
+Omit `schemes` to use the default `[qw(digest bearer basic)]` policy.
+
+## Boundary
+
+Uniform owns:
+
+- challenge parsing
+- supported-scheme discovery and selection
+- credential lookup
+- Basic construction
+- Bearer construction
+- Digest calculation and nonce state
+
+The calling HTTP implementation owns:
+
+- receiving 401 and 407 responses
+- request replay and retry policy
+- connections and transaction lifecycle
+- proxy routing
+- callbacks, Futures, promises, or other completion APIs
 
 ## Lower-level use
 
