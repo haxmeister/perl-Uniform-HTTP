@@ -7,7 +7,7 @@ WriteMakefile(
     VERSION_FROM => 'lib/Uniform/HTTP/Auth.pm',
     ABSTRACT     => 'Framework-agnostic HTTP authentication for Perl',
     AUTHOR       => 'Joshua S. Day <HAX@cpan.org>',
-    LICENSE      => 'artistic_2',
+    LICENSE      => 'mit',
     MIN_PERL_VERSION => '5.016',
     PREREQ_PM => {
         'Carp'               => 0,
