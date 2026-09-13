@@ -58,7 +58,7 @@ Version 0.01 implements:
 - Bearer, RFC 6750
 - Digest, RFC 7616
 
-Unknown schemes are parsed and exposed but are not automatically authorized.
+Unknown schemes are parsed and exposed but are not automatically used.
 There is no public custom-scheme plugin ABI in 0.01.
 
 ## Construction
@@ -102,11 +102,12 @@ my $auth = Uniform::HTTP::Auth->new(
 Optional normalized origin such as `https://example.com:443`.
 
 It is required when `credentials` is a hash reference and binds those stored
-credentials to that origin. A later `authorize()` call can omit `origin`.
+credentials to that origin. A later `prepare_authentication()` call can omit
+`origin`.
 
 With callback credentials, `origin` can be omitted at construction and supplied
-per `authorize()` call. If it is supplied at construction, that object is also
-bound to the origin and a different per-call origin is rejected.
+per `prepare_authentication()` call. If it is supplied at construction, that
+object is also bound to the origin and a different per-call origin is rejected.
 
 ### `credentials`
 
@@ -209,12 +210,12 @@ challenge is usable.
 Scheme modules own selection among variants of the same scheme. Digest, for
 example, skips unsupported algorithms or qop choices.
 
-### `authorize`
+### `prepare_authentication`
 
 For an auth object with a bound origin:
 
 ```perl
-my $result = $auth->authorize(
+my $result = $auth->prepare_authentication(
     challenge_headers => \@authenticate_values,
     method            => 'GET',
     request_target    => '/private?x=1',
@@ -225,7 +226,7 @@ my $result = $auth->authorize(
 For a callback-based object without a bound origin:
 
 ```perl
-my $result = $auth->authorize(
+my $result = $auth->prepare_authentication(
     challenge_headers => \@authenticate_values,
     origin            => 'https://example.com:443',
     method            => 'GET',
@@ -240,9 +241,12 @@ Performs:
 3. stored credential matching or dynamic credential lookup
 4. scheme-specific authentication construction
 
-`authorize()` can continue to another usable configured scheme when the current
-scheme has no suitable stored credentials or a credential callback returns
-`undef`.
+`prepare_authentication()` can continue to another usable configured scheme
+when the current scheme has no suitable stored credentials or a credential
+callback returns `undef`.
+
+It performs no network I/O. The caller owns placing the returned value in an
+HTTP request and deciding whether to retry or send that request.
 
 On success it returns:
 
@@ -258,8 +262,8 @@ On success it returns:
 Returns `undef` when no supported challenge can be satisfied.
 
 The effective origin is either the origin bound at construction or the origin
-supplied to `authorize()`. Together with the challenge realm it identifies the
-HTTP protection space. Uniform does not derive or route origins.
+supplied to `prepare_authentication()`. Together with the challenge realm it
+identifies the HTTP protection space. Uniform does not derive or route origins.
 
 `method` and `request_target` are required only for Digest.
 
