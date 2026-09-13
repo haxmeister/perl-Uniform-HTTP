@@ -13,7 +13,7 @@ WriteMakefile(
         'Carp'               => 0,
         'Crypt::SysRandom'   => '0.006',
         'Digest::MD5'        => 0,
-        'Digest::SHA'        => 0,
+        'Digest::SHA'        => '5.60',
         'Encode'             => 0,
         'MIME::Base64'       => 0,
         'Unicode::Normalize' => 0,
