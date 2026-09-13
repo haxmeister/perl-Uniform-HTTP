@@ -16,3 +16,4 @@ t/04-authorize.t
 t/05-digest.t
 t/06-errors.t
 t/07-digest-stale.t
+t/08-system-random.t
