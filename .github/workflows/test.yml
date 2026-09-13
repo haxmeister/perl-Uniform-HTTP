@@ -25,13 +25,18 @@ jobs:
       - name: Build distribution
         run: |
           perl Makefile.PL
+          make distcheck
           make dist
 
       - name: Install distribution dependencies
-        run: cpanm --notest --installdeps ./Uniform-HTTP-Auth-0.01.tar.gz
+        run: cpanm --notest --installdeps ./Uniform-HTTP-Auth-*.tar.gz
 
       - name: Build and test
         run: |
           perl Makefile.PL
           make test
           make disttest
+
+      - name: Check POD syntax
+        run: |
+          find lib -name '*.pm' -print0 | xargs -0 -n1 podchecker
