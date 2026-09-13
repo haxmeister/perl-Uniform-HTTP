@@ -49,6 +49,12 @@ sub validate_challenge {
             unless $value eq 'true' || $value eq 'false';
     }
 
+    if (exists $challenge->{params}{stale}) {
+        my $value = lc $challenge->{params}{stale};
+        return 'Digest stale must be true or false'
+            unless $value eq 'true' || $value eq 'false';
+    }
+
     return;
 }
 
@@ -84,6 +90,14 @@ sub authorization {
         unless ref($args{challenge}) eq 'HASH';
     for my $field (qw(username password method request_target)) {
         croak "$field must be a plain scalar" if ref($args{$field});
+    }
+    if (exists $args{origin}) {
+        croak "origin must be a plain scalar"
+            if !defined($args{origin}) || ref($args{origin});
+    }
+    if (exists $args{entity_body}) {
+        croak "entity_body must be a defined plain scalar"
+            if !defined($args{entity_body}) || ref($args{entity_body});
     }
 
     my $challenge = $args{challenge};
@@ -130,7 +144,13 @@ sub authorization {
     my $is_session = $algorithm =~ /-sess\z/ ? 1 : 0;
     my ($nc, $cnonce);
     if (defined($qop) || $is_session) {
-        ($nc, $cnonce) = $self->_nonce_values($nonce, defined($qop));
+        my $state_key = _state_key(
+            exists($args{origin}) ? $args{origin} : '',
+            $params->{realm},
+            $username,
+            $nonce,
+        );
+        ($nc, $cnonce) = $self->_nonce_values($state_key, defined($qop));
     }
 
     my $base_algorithm = $algorithm;
@@ -203,12 +223,16 @@ sub authorization {
     return 'Digest ' . join(', ', @fields);
 }
 
-sub _nonce_values {
-    my ($self, $nonce, $increment) = @_;
+sub _state_key {
+    return join '', map { length($_) . ':' . $_ } @_;
+}
 
-    my $state = $self->{nonce_state}{$nonce};
+sub _nonce_values {
+    my ($self, $state_key, $increment) = @_;
+
+    my $state = $self->{nonce_state}{$state_key};
     unless ($state) {
-        $state = $self->{nonce_state}{$nonce} = {
+        $state = $self->{nonce_state}{$state_key} = {
             count  => 0,
             cnonce => $self->_new_cnonce,
         };
@@ -304,5 +328,125 @@ __END__
 =head1 NAME
 
 Uniform::HTTP::Auth::Digest - HTTP Digest authentication calculations and state
+
+=head1 SYNOPSIS
+
+    use Uniform::HTTP::Auth::Digest;
+
+    my $digest = Uniform::HTTP::Auth::Digest->new;
+
+    my $value = $digest->authorization(
+        challenge      => $challenge,
+        origin         => 'https://example.com:443',
+        username       => 'user',
+        password       => 'secret',
+        method         => 'GET',
+        request_target => '/private',
+    );
+
+=head1 DESCRIPTION
+
+C<Uniform::HTTP::Auth::Digest> implements the Digest calculation and client
+state used by L<Uniform::HTTP::Auth>.  It does not send requests or perform
+HTTP retries.
+
+The module supports MD5, SHA-256, and SHA-512/256, including their C<-sess>
+variants, plus C<qop=auth> and C<qop=auth-int>.  MD5 is provided for legacy
+interoperability; modern applications should prefer stronger algorithms when
+servers offer them.
+
+=head1 METHODS
+
+=head2 new
+
+    my $digest = Uniform::HTTP::Auth::Digest->new;
+
+Creates a stateful Digest calculator.  Nonce-count and cnonce state are retained
+across calls.
+
+=head2 validate_challenge
+
+    my $error = Uniform::HTTP::Auth::Digest->validate_challenge($challenge);
+
+Returns undef when the parsed challenge has the required Digest structure, or a
+diagnostic string when it does not.
+
+=head2 select_challenge
+
+    my $challenge = $digest->select_challenge(\@digest_challenges);
+
+Returns the first usable Digest challenge in wire order.  Challenges with an
+unsupported algorithm or no supported qop are skipped.
+
+=head2 authorization
+
+    my $value = $digest->authorization(
+        challenge      => $challenge,
+        origin         => 'https://example.com:443',
+        username       => 'user',
+        password       => 'secret',
+        method         => 'GET',
+        request_target => '/resource',
+        entity_body    => $body,
+    );
+
+Returns a complete Digest authentication field value.
+
+C<challenge>, C<username>, C<password>, C<method>, and C<request_target> are
+required.  C<entity_body> is required only when C<qop=auth-int> is selected and
+must be a defined plain scalar.
+
+C<origin> is optional for direct use but is supplied automatically by
+L<Uniform::HTTP::Auth>.  When present, it is included in the internal Digest
+state key so identical nonce strings from unrelated HTTP protection spaces do
+not share nonce counts or cnonces.  Direct users that omit C<origin> should keep
+a Digest object scoped appropriately for their endpoint.
+
+If a challenge lists both C<auth> and C<auth-int>, version 0.01 prefers C<auth>.
+If no supported qop can be satisfied, the method returns undef so a caller can
+try another challenge or authentication scheme.
+
+=head1 DIGEST STATE
+
+State is isolated by origin, realm, username, and nonce.  The first use of a
+nonce with qop sends C<nc=00000001>; subsequent uses increment the count.  A new
+nonce naturally starts a new sequence.  Client nonces are generated from
+L<Crypt::SysRandom>.
+
+A C<stale=true> challenge is accepted so a calling HTTP implementation can
+retry with existing credentials.  Uniform still does not own the request retry
+itself.
+
+=head1 CHARACTER ENCODING
+
+When C<charset=UTF-8> is present, username and password are normalized to NFC
+and encoded as UTF-8 for the Digest calculation.  C<userhash=true> and
+C<username*> are supported as defined by RFC 7616.
+
+Without a charset indication, version 0.01 accepts ASCII username/password
+credentials only rather than guessing an encoding.
+
+=head1 LEGACY INTEROPERABILITY
+
+Digest challenges without qop are accepted for compatibility.  Session
+algorithms still generate and send a cnonce when qop is absent.
+
+=head1 SECURITY NOTES
+
+Digest does not make an insecure transport confidential, and legacy MD5 Digest
+should not be treated as a modern cryptographic choice.  Scheme policy belongs
+to the caller or the configured L<Uniform::HTTP::Auth> scheme order.
+
+=head1 SEE ALSO
+
+L<Uniform::HTTP::Auth>, RFC 7616.
+
+=head1 AUTHOR
+
+Joshua S. Day, E<lt>HAX@cpan.orgE<gt>
+
+=head1 LICENSE
+
+This software is released under the MIT License.
 
 =cut
