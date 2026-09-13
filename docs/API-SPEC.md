@@ -18,7 +18,7 @@ framework objects from any HTTP stack.
 - parsing `WWW-Authenticate` and `Proxy-Authenticate` challenge values
 - preserving unknown authentication schemes
 - supported-scheme discovery and preference
-- credential-provider orchestration
+- stored or dynamically looked-up credentials
 - Basic authentication construction
 - Bearer authentication construction
 - Digest calculation and client nonce state
@@ -63,15 +63,81 @@ There is no public custom-scheme plugin ABI in 0.01.
 
 ## Construction
 
+The normal application form stores one credential set for one origin:
+
 ```perl
 my $auth = Uniform::HTTP::Auth->new(
-    schemes => [qw(digest bearer basic)],
+    origin => 'https://example.com:443',
+    credentials => {
+        username => 'user',
+        password => 'secret',
+    },
+);
+```
+
+A Bearer-only application can instead store a token:
+
+```perl
+my $auth = Uniform::HTTP::Auth->new(
+    origin => 'https://api.example.com:443',
+    credentials => {
+        token => $token,
+    },
+);
+```
+
+A generic HTTP library or application credential store can use dynamic lookup:
+
+```perl
+my $auth = Uniform::HTTP::Auth->new(
     credentials => sub {
-        my ($need) = @_;
+        my ($context) = @_;
         ...
     },
 );
 ```
+
+### `origin`
+
+Optional normalized origin such as `https://example.com:443`.
+
+It is required when `credentials` is a hash reference and binds those stored
+credentials to that origin. A later `authorize()` call can omit `origin`.
+
+With callback credentials, `origin` can be omitted at construction and supplied
+per `authorize()` call. If it is supplied at construction, that object is also
+bound to the origin and a different per-call origin is rejected.
+
+### `credentials`
+
+May be either a hash reference or coderef.
+
+A hash reference stores credentials on the auth object for later use. Basic and
+Digest use:
+
+```perl
+{
+    username => 'user',
+    password => 'secret',
+}
+```
+
+Bearer uses:
+
+```perl
+{
+    token => 'abcdef...',
+}
+```
+
+A hash may contain both forms. Uniform skips schemes for which the stored
+credential set does not contain the required fields.
+
+A coderef performs dynamic credential lookup. It is intended for reusable HTTP
+libraries and applications with credential stores; see the dynamic lookup
+contract below.
+
+Credentials are not required for parsing or selection.
 
 ### `schemes`
 
@@ -86,10 +152,7 @@ The order is a convenience policy, not a universal security ranking. Scheme
 names are normalized to lowercase. Unsupported or duplicate configured schemes
 are programmer errors.
 
-### `credentials`
-
-Optional coderef used by `authorize()` to obtain application-owned credentials.
-It is not required for parsing or selection.
+Unknown constructor options are programmer errors.
 
 ## Challenge representation
 
@@ -140,13 +203,26 @@ my $challenge = $auth->select($challenges);
 ```
 
 Returns the best usable challenge according to configured scheme preference.
-It does not call the credential provider. Returns `undef` when no supported,
-well-formed challenge is usable.
+It does not obtain credentials. Returns `undef` when no supported, well-formed
+challenge is usable.
 
 Scheme modules own selection among variants of the same scheme. Digest, for
 example, skips unsupported algorithms or qop choices.
 
 ### `authorize`
+
+For an auth object with a bound origin:
+
+```perl
+my $result = $auth->authorize(
+    challenge_headers => \@authenticate_values,
+    method            => 'GET',
+    request_target    => '/private?x=1',
+    entity_body       => $body,
+);
+```
+
+For a callback-based object without a bound origin:
 
 ```perl
 my $result = $auth->authorize(
@@ -154,7 +230,6 @@ my $result = $auth->authorize(
     origin            => 'https://example.com:443',
     method            => 'GET',
     request_target    => '/private?x=1',
-    entity_body       => $body,
 );
 ```
 
@@ -162,11 +237,12 @@ Performs:
 
 1. challenge parsing
 2. scheme ordering and scheme-specific selection
-3. credential lookup
+3. stored credential matching or dynamic credential lookup
 4. scheme-specific authentication construction
 
-If the credential provider returns `undef` for a preferred scheme,
-`authorize()` can continue to another usable configured scheme.
+`authorize()` can continue to another usable configured scheme when the current
+scheme has no suitable stored credentials or a credential callback returns
+`undef`.
 
 On success it returns:
 
@@ -181,8 +257,8 @@ On success it returns:
 `value` is the complete authentication field value without a field name.
 Returns `undef` when no supported challenge can be satisfied.
 
-`origin` is required and identifies the normalized HTTP origin, such as
-`https://example.com:443`. Together with the challenge realm it identifies the
+The effective origin is either the origin bound at construction or the origin
+supplied to `authorize()`. Together with the challenge realm it identifies the
 HTTP protection space. Uniform does not derive or route origins.
 
 `method` and `request_target` are required only for Digest.
@@ -190,9 +266,24 @@ HTTP protection space. Uniform does not derive or route origins.
 `entity_body` is used only for Digest `qop=auth-int`; when supplied it must be a
 defined plain scalar.
 
-## Credential provider contract
+## Static credential contract
 
-The provider receives:
+Static credentials are copied into the auth object at construction and are
+bound to one normalized origin.
+
+A username/password pair is considered for Basic and Digest. A token is
+considered for Bearer. If the server offers a scheme that the stored credential
+set cannot satisfy, Uniform skips it and can continue to another configured
+scheme.
+
+Static username/password credentials must contain both fields. Empty credential
+hashes and non-scalar credential values are programmer errors.
+
+Static credentials are never used for a different origin.
+
+## Dynamic credential lookup contract
+
+A credential callback receives:
 
 ```perl
 {
@@ -205,7 +296,7 @@ The provider receives:
 
 Return `undef` when credentials are unavailable for that protection space.
 
-For Basic and Digest:
+For Basic and Digest return:
 
 ```perl
 {
@@ -214,7 +305,7 @@ For Basic and Digest:
 }
 ```
 
-For Bearer:
+For Bearer return:
 
 ```perl
 {
@@ -222,8 +313,8 @@ For Bearer:
 }
 ```
 
-The provider supplies credentials; it does not verify them. Missing required
-fields or invalid provider return types are programmer errors.
+The callback supplies credentials; it does not verify them. Missing required
+fields or invalid callback return types are programmer errors.
 
 ## Basic
 
@@ -249,7 +340,7 @@ Uniform treats the token as opaque. It does not decode JWTs, acquire or refresh
 OAuth tokens, determine token permissions, or validate token expiry.
 
 Bearer challenge parameters remain available through the parsed challenge and
-the credential-provider callback.
+the dynamic credential callback.
 
 ## Digest
 
@@ -283,16 +374,17 @@ recommended modern security choice.
 
 ## Error model
 
-Programmer misuse throws an exception. Examples include bad argument types,
-invalid configured schemes, missing required credential fields, invalid
-origins, and invalid `auth-int` body values.
+Programmer misuse throws an exception. Examples include unknown constructor
+options, invalid configured schemes, malformed stored credentials, bad argument
+types, missing required credential fields, invalid origins, and invalid
+`auth-int` body values.
 
 Malformed remote challenge input does not throw merely because it came from the
 network. It is represented as malformed challenge data and ignored by automatic
 selection.
 
-A credential provider returning `undef` is normal and means credentials are not
-available for that protection space.
+A dynamic credential callback returning `undef` is normal and means credentials
+are not available for that protection space.
 
 ## Runtime dependencies
 
