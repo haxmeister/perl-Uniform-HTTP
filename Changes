@@ -4,6 +4,8 @@ Revision history for Uniform-HTTP-Auth
     - Initial release.
     - Add transport-, framework-, and event-loop-agnostic HTTP authentication.
     - Add challenge parsing, malformed-input reporting, and scheme selection.
+    - Add prepare_authentication() to prepare authentication field values without
+      performing network I/O or request retry.
     - Add a simple origin-bound stored-credentials constructor for normal
       applications, plus callback-based dynamic credential lookup for reusable
       HTTP stacks and credential stores.
