@@ -177,6 +177,7 @@ sub authorize {
             my %digest_args = (
                 %$credentials,
                 challenge      => $challenge,
+                origin         => $args{origin},
                 method         => $args{method},
                 request_target => $args{request_target},
             );
@@ -217,6 +218,8 @@ sub _validate_origin {
     my ($origin) = @_;
     croak "origin is required"
         unless defined($origin) && !ref($origin) && length($origin);
+    croak "origin must not contain whitespace or control characters"
+        if $origin =~ /[\x00-\x20\x7f]/;
     croak "origin must be a normalized origin without credentials or path"
         unless $origin =~ m{\A[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]+\z};
 }
@@ -369,7 +372,7 @@ sub _parse_auth_param {
             if ($inner =~ s/\A\\([\x09\x20-\x7e\x80-\xff])//s) {
                 $decoded .= $1;
             }
-            elsif ($inner =~ s/\A([^"\\]+)//s) {
+            elsif ($inner =~ s/\A([\x09\x20-\x21\x23-\x5b\x5d-\x7e\x80-\xff]+)//s) {
                 $decoded .= $1;
             }
             else {
@@ -426,38 +429,235 @@ __END__
 
 =head1 NAME
 
-Uniform::HTTP::Auth - Framework-agnostic HTTP authentication engine
+Uniform::HTTP::Auth - Framework-agnostic HTTP authentication for Perl
 
 =head1 SYNOPSIS
 
     use Uniform::HTTP::Auth;
 
     my $auth = Uniform::HTTP::Auth->new(
+        schemes => [qw(digest bearer basic)],
         credentials => sub {
             my ($need) = @_;
+
+            return {
+                token => $api_token,
+            } if $need->{scheme} eq 'bearer';
+
             return {
                 username => 'user',
                 password => 'secret',
-            } if $need->{scheme} eq 'basic';
+            } if $need->{scheme} eq 'digest'
+              || $need->{scheme} eq 'basic';
+
             return;
         },
     );
 
     my $result = $auth->authorize(
-        challenge_headers => ['Basic realm="Members"'],
-        origin            => 'https://example.com:443',
-        method            => 'GET',
-        request_target    => '/',
+        challenge_headers => [
+            'Digest realm="Members", nonce="abc", qop="auth", algorithm=SHA-256',
+            'Basic realm="Members"',
+        ],
+        origin         => 'https://example.com:443',
+        method         => 'GET',
+        request_target => '/private',
     );
 
-    # $result->{value} is a complete Authorization field value.
+    # $result->{value} is the complete field value, for example:
+    # Digest username="user", ...
+    #
+    # The caller decides whether it belongs in Authorization or
+    # Proxy-Authorization and whether the request should be retried.
 
 =head1 DESCRIPTION
 
-Uniform::HTTP::Auth implements HTTP authentication mechanics without depending on
-an HTTP client, server, framework, event loop, or transaction abstraction. Callers
-supply plain HTTP authentication data and receive plain Perl data in return.
+C<Uniform::HTTP::Auth> implements HTTP authentication mechanics without
+requiring an HTTP client, server, framework, event loop, request object, or
+transaction abstraction.
 
-See F<docs/API-SPEC.md> in the distribution for the complete 0.01 contract.
+It parses HTTP authentication challenges, selects a supported scheme, asks an
+application-supplied callback for credentials, and constructs an authentication
+field value.  All public inputs and outputs are plain Perl data.
+
+The distribution implements Basic (RFC 7617), Bearer (RFC 6750), and Digest
+(RFC 7616).  Unknown schemes are parsed and preserved for introspection but are
+not automatically authorized in version 0.01.
+
+=head1 OWNERSHIP BOUNDARY
+
+This module owns authentication mechanics: challenge parsing, scheme selection,
+credential lookup, Basic and Bearer construction, Digest calculation, and
+Digest nonce state.
+
+The calling HTTP implementation owns receiving 401 or 407 responses, request
+replay, retries, connections, proxy routing, and the choice between
+C<Authorization> and C<Proxy-Authorization>.
+
+=head1 CONSTRUCTOR
+
+=head2 new
+
+    my $auth = Uniform::HTTP::Auth->new(%options);
+
+Supported options are:
+
+=over 4
+
+=item schemes
+
+An array reference containing the enabled authentication schemes in preference
+order.  Scheme names are case-insensitive.  The default is:
+
+    [qw(digest bearer basic)]
+
+The order is a convenience policy, not a universal security ranking.  Supply an
+explicit order when an application has its own policy.
+
+=item credentials
+
+A coderef used by C<authorize()> to obtain credentials.  Parsing and selection
+can be used without a credential provider.
+
+=back
+
+=head1 METHODS
+
+=head2 schemes
+
+    my $schemes = $auth->schemes;
+
+Returns a new array reference containing the configured normalized scheme names.
+
+=head2 parse_challenges
+
+    my $challenges = $auth->parse_challenges(@header_values);
+
+Parses one or more complete C<WWW-Authenticate> or C<Proxy-Authenticate> field
+values.  Multiple challenges on one field line and multiple field occurrences
+are supported.
+
+Returns an array reference in wire order.  Each element is a plain hash
+reference with these keys:
+
+    {
+        scheme    => 'digest',
+        raw       => 'Digest realm="Members", ...',
+        params    => { realm => 'Members', ... },
+        token68   => undef,
+        malformed => 0,
+        error     => undef,
+    }
+
+Scheme and parameter names are normalized to lowercase.  Unknown schemes are
+retained.  Malformed remote input is returned as data with C<malformed> true and
+C<error> set; malformed challenge input does not throw merely because it came
+from the network.
+
+=head2 select
+
+    my $challenge = $auth->select($challenges);
+
+Selects the best usable challenge according to the configured scheme order.
+The method does not call the credential provider.  It returns undef if no
+supported well-formed challenge can be used.
+
+When a field contains multiple Digest challenges, Digest-specific algorithm and
+qop selection remains the responsibility of L<Uniform::HTTP::Auth::Digest>.
+
+=head2 authorize
+
+    my $result = $auth->authorize(
+        challenge_headers => \@authenticate_values,
+        origin            => 'https://example.com:443',
+        method            => 'GET',
+        request_target    => '/private?x=1',
+        entity_body       => $body,
+    );
+
+Performs parsing, scheme selection, credential lookup, and authentication value
+construction.  It tries configured schemes in order and can fall through to a
+later scheme when the credential provider returns undef.
+
+C<origin> is required and must be a normalized origin such as
+C<https://example.com:443>.  It identifies the HTTP protection space together
+with the challenge realm.  Uniform does not derive or route origins.
+
+C<method> and C<request_target> are required only when Digest is selected.
+C<entity_body> is used only for Digest C<qop=auth-int> and must be a plain scalar
+when supplied.
+
+On success, the method returns:
+
+    {
+        scheme    => 'digest',
+        value     => 'Digest username="...", ...',
+        challenge => $challenge,
+    }
+
+C<value> is the complete authentication field value without a header name.
+Returns undef when no supported challenge can be satisfied.
+
+=head1 CREDENTIAL PROVIDER
+
+The credential provider is called with one plain hash reference:
+
+    {
+        scheme    => 'digest',
+        origin    => 'https://example.com:443',
+        realm     => 'Members',
+        challenge => $challenge,
+    }
+
+Return undef when credentials are unavailable for that protection space.
+Return a hash reference otherwise.
+
+Basic and Digest expect:
+
+    { username => 'user', password => 'secret' }
+
+Bearer expects:
+
+    { token => 'token-value' }
+
+The callback supplies credentials; it does not verify them.  Missing fields or
+invalid return types are programmer errors and throw exceptions.
+
+=head1 ERROR MODEL
+
+Programmer errors, such as invalid argument types or malformed credential
+provider results, throw exceptions with C<croak>.
+
+Malformed remote challenge data is represented in the returned challenge data
+and ignored by automatic selection.  A credential provider returning undef is
+not an error.
+
+=head1 SECURITY NOTES
+
+Basic credentials are only Base64 encoded and should normally be sent over a
+secure transport such as TLS.
+
+Bearer tokens are treated as opaque credentials.  This distribution does not
+validate JWTs, refresh OAuth tokens, or determine token permissions.
+
+Digest supports legacy MD5 for interoperability as well as SHA-256 and
+SHA-512/256 families.  Applications can restrict the enabled authentication
+schemes at construction time.
+
+=head1 SEE ALSO
+
+L<Uniform::HTTP::Auth::Basic>, L<Uniform::HTTP::Auth::Bearer>,
+L<Uniform::HTTP::Auth::Digest>, RFC 9110, RFC 7617, RFC 7616, RFC 6750.
+
+The distribution also includes F<docs/API-SPEC.md> with the version 0.01 API
+contract and ownership boundary.
+
+=head1 AUTHOR
+
+Joshua S. Day, E<lt>HAX@cpan.orgE<gt>
+
+=head1 LICENSE
+
+This software is released under the MIT License.
 
 =cut
