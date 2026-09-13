@@ -22,8 +22,13 @@ jobs:
         with:
           perl-version: ${{ matrix.perl }}
 
-      - name: Install dependencies
-        run: cpanm --notest --installdeps .
+      - name: Build distribution
+        run: |
+          perl Makefile.PL
+          make dist
+
+      - name: Install distribution dependencies
+        run: cpanm --notest --installdeps ./Uniform-HTTP-Auth-0.01.tar.gz
 
       - name: Build and test
         run: |
