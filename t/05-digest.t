@@ -20,7 +20,13 @@ my $digest = Uniform::HTTP::Auth::Digest->new(
     },
 );
 
-$digest->{nonce_state}{ $parsed->[0]{params}{nonce} } = {
+my $state_key = Uniform::HTTP::Auth::Digest::_state_key(
+    '',
+    $parsed->[0]{params}{realm},
+    'Mufasa',
+    $parsed->[0]{params}{nonce},
+);
+$digest->{nonce_state}{$state_key} = {
     count  => 0,
     cnonce => $cnonce,
 };
@@ -60,7 +66,13 @@ my $utf8_challenge = $auth->parse_challenges(
 my $digest_utf8 = Uniform::HTTP::Auth::Digest->new(
     _random_bytes => sub { return "\x02" x 24 },
 );
-$digest_utf8->{nonce_state}{ $utf8_challenge->{params}{nonce} } = {
+my $utf8_key = Uniform::HTTP::Auth::Digest::_state_key(
+    '',
+    $utf8_challenge->{params}{realm},
+    "J\x{00e4}s\x{00f8}n Doe",
+    $utf8_challenge->{params}{nonce},
+);
+$digest_utf8->{nonce_state}{$utf8_key} = {
     count  => 0,
     cnonce => 'NTg6RKcb9boFIAS3KrFK9BGeh+iDa/sm6jUMp2wds69v',
 };
