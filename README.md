@@ -15,7 +15,8 @@ another's object model.
 - `Uniform::HTTP::Auth` implements Basic, Bearer, and Digest authentication.
 
 The canonical message classes are mutable, lossless, detached objects.
-Framework adapters are separate distributions and implement the same contract.
+Framework adapters are separate distributions and implement the same portable
+contract.
 
 ## Request and response objects
 
@@ -53,9 +54,29 @@ Bodies and header values are bytes. A message never consumes an input stream,
 filehandle, callback, PSGI input object, or PAGI body source merely because
 `body()` was called.
 
-Canonical messages begin complete and mutable. `commit()` freezes metadata,
-while `mark_incomplete()` and `mark_complete()` let a protocol implementation
-track an incremental body without putting transport behavior into Uniform.
+`is_complete()` and `is_mutable()` are part of the portable contract so
+adapters can report native message state truthfully. Adapters are not required
+to provide methods that change those states.
+
+Canonical Uniform objects additionally provide `freeze()`,
+`mark_incomplete()`, and `mark_complete()` as local helpers. `freeze()`
+makes every represented message value immutable, including a buffered body,
+without sending or committing anything in a framework.
+
+## HTTP/2 and HTTP/3 request metadata
+
+`scheme()` and `authority()` are optional request metadata. Uniform never
+infers them from Host, a request target, or the transport.
+
+HTTP/2 and HTTP/3 adapters normally expose exact `:path` bytes through
+`target()`. Ordinary CONNECT is the special case because it has
+`:authority` but no `:path`; adapters expose the exact `:authority` bytes
+as the authority-form target and may still report `target_is_exact()` as
+true.
+
+Authority handling is deliberately minimal and byte-oriented. Uniform is not a
+URI parser and does not impose protocol-specific host, port, userinfo, IP
+literal, or percent-escape rules.
 
 ## Authentication
 
@@ -81,8 +102,8 @@ my $result = $auth->prepare_authentication(
 my $authorization_value = $result->{value};
 ```
 
-`prepare_authentication()` also accepts explicit `method`, `request_target`,
-and `entity_body` values, preserving the API released in
+`prepare_authentication()` also accepts explicit `method`,
+`request_target`, and `entity_body` values, preserving the API released in
 `Uniform-HTTP-Auth` 0.01. It performs no network I/O and does not retry or send
 the request.
 
@@ -99,6 +120,7 @@ Uniform owns:
 
 - lossless HTTP message semantics
 - exact request targets when supplied by the source
+- optional request scheme and authority semantics
 - buffered body state
 - capability reporting for adapters
 - authentication challenge parsing and scheme selection
@@ -109,15 +131,19 @@ The calling HTTP implementation owns:
 - parsing and serializing wire protocols
 - sockets, TLS, connections, and transaction state
 - incremental request and response body transfer
+- native message lifecycle and framework response commitment
 - cancellation, backpressure, retry, redirect, and replay policy
 - HTTP/1 framing, HTTP/2 streams, and HTTP/3 streams
-- framework response commitment and lifecycle
 
 ## Adapters
 
 Adapters are explicit and separately installed. A core application never
 runtime-probes for Mojo, PSGI, PAGI, Dancer2, Catalyst, Linux::Event, or
 `HTTP::Message`.
+
+Adapters report mutability and completeness through the portable capability
+methods. They do not need to implement the canonical `freeze()`,
+`mark_incomplete()`, or `mark_complete()` helpers.
 
 See `docs/MESSAGE-SPEC.md` for the normative message contract and
 `docs/ADAPTERS.md` for adapter requirements.
