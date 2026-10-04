@@ -1,5 +1,18 @@
 Revision history for Uniform-HTTP
 
+0.05  Not yet released
+    - Add Uniform::HTTP::FastPath ABI version 1 for native-backed HTTP engines.
+    - Add one-operation fixed-layout views of exact canonical Message, Request,
+      and Response objects with explicit kind, state, fidelity, and body flags.
+    - Borrow canonical header and trailer storage for immediate native
+      consumption without exposing the object's internal hash layout as ABI.
+    - Add trusted Request and Response construction for protocol engines that
+      already validated Uniform semantics, avoiding duplicate public validation
+      and per-field construction calls.
+    - Keep the normal constructors, adapters, subclasses, parsing, I/O, and
+      protocol behavior unchanged; unsupported objects fall back to the portable
+      Uniform message API.
+
 0.04  2026-10-04
     - Add separate ordered trailer fields to Message, Request, and Response,
       preserving duplicate fields, spelling, order, and bytes.

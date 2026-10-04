@@ -199,6 +199,19 @@ Do not silently copy on mutation unless the adapter type is explicitly
 documented as a snapshot adapter. A caller must be able to know whether it is
 changing the native message or a detached Uniform value.
 
+## Fast path
+
+`Uniform::HTTP::FastPath` is not part of adapter conformance.
+
+ABI version 1 deliberately accepts only exact canonical `Uniform::HTTP::Message`,
+`Request`, and `Response` objects. Adapters and subclasses use the portable
+method contract in this guide. This prevents a fast-path consumer from assuming
+canonical storage when a native or delegated object has different semantics.
+
+A future fast-path ABI may define a separate adapter capability if there is a
+real implementation need. Adapter authors should not imitate canonical private
+storage to opt into ABI version 1.
+
 ## Framework checklist
 
 The same contract applies to each target, but these are the likely pressure

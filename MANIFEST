@@ -10,6 +10,7 @@ docs/MESSAGE-SPEC.md
 docs/MODERN-HTTP-AUDIT.md
 lib/Uniform/HTTP.pm
 lib/Uniform/HTTP/Message.pm
+lib/Uniform/HTTP/FastPath.pm
 lib/Uniform/HTTP/Request.pm
 lib/Uniform/HTTP/Response.pm
 lib/Uniform/HTTP/Auth.pm
@@ -35,3 +36,4 @@ t/15-trailers.t
 t/16-section-lifecycle.t
 t/17-modern-requests.t
 t/18-adapter-capabilities.t
+t/19-fast-path.t
