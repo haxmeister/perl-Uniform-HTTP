@@ -81,44 +81,82 @@ Uniform::HTTP::Response - Framework-neutral HTTP response
     use Uniform::HTTP::Response;
 
     my $response = Uniform::HTTP::Response->new(
-        status  => 201,
-        reason  => 'Created',
-        version => '1.1',
-        headers => [ [ 'Content-Type', 'application/json' ] ],
-        body    => '{}',
+        status  => 200,
+        headers => [
+            [ 'Content-Type', 'text/plain' ],
+        ],
+        body => "hello\n",
     );
 
 =head1 DESCRIPTION
 
-Uniform::HTTP::Response adds status and optional reason-phrase semantics to
-L<Uniform::HTTP::Message>. It does not send a response or represent output
-progress.
+Uniform::HTTP::Response represents HTTP response data without sending a
+response or owning a connection, transaction, framework, or event loop.
+
+A response always has a status. It may also carry a reason phrase, version,
+headers, and a buffered body.
 
 =head1 CONSTRUCTOR
 
 =head2 new
 
-Requires a named C<status> argument. It accepts optional C<reason> and the
-common C<version>, C<headers>, and C<body> arguments. No reason phrase or HTTP
-version is synthesized.
+    my $response = Uniform::HTTP::Response->new(
+        status => 200,
+        body   => 'ok',
+    );
+
+C<status> is required.
+
+Optional arguments are:
+
+=over 4
+
+=item * C<reason>
+
+=item * C<version>
+
+=item * C<headers>
+
+=item * C<body>
+
+=back
 
 =head1 METHODS
 
 =head2 status
 
-Returns an integer HTTP status from 100 through 599. Passing a valid status
-sets it and returns the response.
+    my $status = $response->status;
+
+Returns the HTTP status code.
+
+Set it with:
+
+    $response->status(404);
+
+Valid status values are integers from 100 through 599.
 
 =head2 reason
 
-Returns the reason phrase or C<undef> when none was supplied. Passing a byte
-string sets it; passing C<undef> clears it. Uniform does not synthesize standard
-phrases such as C<OK>.
+    my $reason = $response->reason;
+
+Returns the reason phrase, or C<undef> when none was supplied.
+
+Set or clear it with:
+
+    $response->reason('Not Found');
+    $response->reason(undef);
+
+Uniform does not invent standard reason phrases such as C<OK>.
 
 =head1 INHERITED METHODS
 
-See L<Uniform::HTTP::Message> for headers, body state, version, capability
-reporting, and mutation.
+Headers, bodies, versions, mutability, and completeness come from
+L<Uniform::HTTP::Message>.
+
+=head1 SEE ALSO
+
+L<Uniform::HTTP>, L<Uniform::HTTP::Message>,
+L<Uniform::HTTP::Request>.
 
 =head1 AUTHOR
 
