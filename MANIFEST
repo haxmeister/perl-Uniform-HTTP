@@ -7,6 +7,7 @@ README.md
 docs/ADAPTERS.md
 docs/AUTH-SPEC.md
 docs/MESSAGE-SPEC.md
+docs/MODERN-HTTP-AUDIT.md
 lib/Uniform/HTTP.pm
 lib/Uniform/HTTP/Message.pm
 lib/Uniform/HTTP/Request.pm
@@ -30,3 +31,7 @@ t/11-request-response.t
 t/12-message-validation.t
 t/13-auth-request.t
 t/14-contract-boundary.t
+t/15-trailers.t
+t/16-section-lifecycle.t
+t/17-modern-requests.t
+t/18-adapter-capabilities.t

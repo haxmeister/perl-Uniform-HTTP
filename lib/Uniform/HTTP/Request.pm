@@ -5,7 +5,7 @@ use warnings;
 use Carp qw(croak);
 use parent 'Uniform::HTTP::Message';
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 sub new {
     my ($class, @args) = @_;
@@ -17,8 +17,10 @@ sub new {
                 || $name eq 'target'
                 || $name eq 'scheme'
                 || $name eq 'authority'
+                || $name eq 'protocol'
                 || $name eq 'version'
                 || $name eq 'headers'
+                || $name eq 'trailers'
                 || $name eq 'body';
     }
 
@@ -26,7 +28,7 @@ sub new {
     croak 'target is required' unless exists $args->{target};
 
     my @common;
-    for my $name (qw(version headers body)) {
+    for my $name (qw(version headers trailers body)) {
         push @common, $name => $args->{$name} if exists $args->{$name};
     }
 
@@ -35,6 +37,7 @@ sub new {
     $self->target($args->{target});
     $self->scheme($args->{scheme}) if exists $args->{scheme};
     $self->authority($args->{authority}) if exists $args->{authority};
+    $self->protocol($args->{protocol}) if exists $args->{protocol};
     return $self;
 }
 
@@ -43,7 +46,7 @@ sub method {
     return $self->{method} unless @args;
     croak 'method() accepts at most one value' unless @args == 1;
 
-    $self->_assert_mutable;
+    $self->_assert_initial_mutable;
     my $method = Uniform::HTTP::Message::_byte_string('method', $args[0]);
     croak 'method must be an HTTP token'
         unless $method =~ /\A[!\#\$%&'*+\-.\^_`|~0-9A-Za-z]+\z/;
@@ -56,7 +59,7 @@ sub target {
     return $self->{target} unless @args;
     croak 'target() accepts at most one value' unless @args == 1;
 
-    $self->_assert_mutable;
+    $self->_assert_initial_mutable;
     my $target = Uniform::HTTP::Message::_byte_string('target', $args[0]);
     croak 'target must not be empty' unless length $target;
     croak 'target must not contain spaces or control bytes'
@@ -70,7 +73,7 @@ sub scheme {
     return $self->{scheme} unless @args;
     croak 'scheme() accepts at most one value' unless @args == 1;
 
-    $self->_assert_mutable;
+    $self->_assert_initial_mutable;
     if (!defined $args[0]) {
         $self->{scheme} = undef;
         return $self;
@@ -88,7 +91,7 @@ sub authority {
     return $self->{authority} unless @args;
     croak 'authority() accepts at most one value' unless @args == 1;
 
-    $self->_assert_mutable;
+    $self->_assert_initial_mutable;
     if (!defined $args[0]) {
         $self->{authority} = undef;
         return $self;
@@ -101,6 +104,24 @@ sub authority {
     croak 'authority contains a prohibited delimiter or control byte'
         if $authority =~ /[\x00-\x20\x7f\/?#]/;
     $self->{authority} = $authority;
+    return $self;
+}
+
+sub protocol {
+    my ($self, @args) = @_;
+    return $self->{protocol} unless @args;
+    croak 'protocol() accepts at most one value' unless @args == 1;
+
+    $self->_assert_initial_mutable;
+    if (!defined $args[0]) {
+        $self->{protocol} = undef;
+        return $self;
+    }
+
+    my $protocol = Uniform::HTTP::Message::_byte_string('protocol', $args[0]);
+    croak 'protocol must be an HTTP token'
+        unless $protocol =~ /\A[!\#\$%&'*+\-.\^_`|~0-9A-Za-z]+\z/;
+    $self->{protocol} = $protocol;
     return $self;
 }
 
@@ -138,7 +159,7 @@ Uniform::HTTP::Request represents HTTP request data without owning a
 connection, transaction, event loop, or transport.
 
 A request always has a method and request target. It may also carry scheme,
-authority, version, headers, and a buffered body.
+authority, protocol, version, headers, trailers, and a buffered body.
 
 Creating or changing a request never sends anything.
 
@@ -162,9 +183,13 @@ Optional arguments are:
 
 =item * C<authority>
 
+=item * C<protocol>
+
 =item * C<version>
 
 =item * C<headers>
+
+=item * C<trailers>
 
 =item * C<body>
 
@@ -217,6 +242,21 @@ or C<undef> when none is represented.
 
 Uniform does not invent an authority from C<Host> or the request target.
 
+=head2 protocol
+
+    my $protocol = $request->protocol;
+    $request->protocol('websocket');
+    $request->protocol(undef);
+
+Returns the Extended CONNECT protocol-name token, or C<undef> when absent.
+The exact token bytes and spelling are preserved. Tokens such as C<websocket>,
+C<connect-udp>, and future names use the same API. It is not an HTTP version or
+an Upgrade field list, and it is never inferred from Upgrade.
+
+The token must use HTTP token syntax. Uniform does not interpret the token,
+check a registry, change the method, or perform negotiation. All request
+metadata setters are blocked by C<freeze_initial()> as well as C<freeze()>.
+
 =head2 target_is_exact
 
 Returns true for canonical Uniform requests because C<target()> contains the
@@ -239,13 +279,26 @@ are exposed as the authority-form target:
     target    => 'example.com:443',
     authority => 'example.com:443',
 
-Uniform preserves the meaning of those values but does not implement HTTP/2 or
-HTTP/3 framing or validation.
+Extended CONNECT instead supplies protocol metadata and keeps the exact
+C<:path> as the target:
+
+    method    => 'CONNECT',
+    protocol  => 'websocket',
+    scheme    => 'https',
+    authority => 'example.com',
+    target    => '/chat',
+
+The sender validates required field combinations and negotiation for its HTTP
+version. Uniform checks individual value syntax, allowing metadata to be
+assembled in any order. It does not certify a legal wire request.
+
+Leaving C<version> unset is appropriate for an application-created request.
+The sender may select a version without modifying the object.
 
 =head1 INHERITED METHODS
 
-Headers, bodies, versions, mutability, and completeness come from
-L<Uniform::HTTP::Message>.
+Headers, trailers, bodies, versions, section mutability, and completeness
+come from L<Uniform::HTTP::Message>.
 
 =head1 SEE ALSO
 

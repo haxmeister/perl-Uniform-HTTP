@@ -8,7 +8,7 @@ use Uniform::HTTP::Auth::Basic ();
 use Uniform::HTTP::Auth::Bearer ();
 use Uniform::HTTP::Auth::Digest ();
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 my %SCHEME_CLASS = (
     basic  => 'Uniform::HTTP::Auth::Basic',

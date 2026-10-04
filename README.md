@@ -12,23 +12,13 @@ It gives different HTTP libraries a common way to represent:
 
 - requests
 - responses
-- headers
+- headers and trailers
 - buffered bodies
 - HTTP authentication
 
 It does **not** open sockets, run an event loop, parse HTTP from the network, or
 send requests. Those jobs stay with the HTTP client, server, or framework using
 it.
-
-The useful mental model is:
-
-```text
-HTTP client / server / framework
-            |
-      Uniform::HTTP
-            |
-   request / response data
-```
 
 This makes it possible for unrelated HTTP implementations to exchange the same
 kind of request and response objects without depending on each other's object
@@ -52,6 +42,7 @@ Most application code will use `Uniform::HTTP::Request` and
 Create a request:
 
 ```perl
+use feature 'say';
 use Uniform::HTTP::Request;
 
 my $request = Uniform::HTTP::Request->new(
@@ -72,6 +63,7 @@ say $request->header('Accept');     # application/json
 Create a response:
 
 ```perl
+use feature 'say';
 use Uniform::HTTP::Response;
 
 my $response = Uniform::HTTP::Response->new(
@@ -118,6 +110,28 @@ Uniform::HTTP preserves:
 
 Header lookup is case-insensitive.
 
+## Trailers
+
+Trailers are fields supplied after the body. They stay separate from headers
+and preserve the same duplicates, order, spelling, and bytes:
+
+```perl
+my $response = Uniform::HTTP::Response->new(
+    status   => 200,
+    body     => $bytes,
+    trailers => [ [ 'Content-Digest', $digest_field_value ] ],
+);
+
+my $digest = $response->trailer('Content-Digest');
+my $all = $response->trailer_values('Content-Digest');
+$response->add_trailer('X-Metric', '42');
+```
+
+`trailer_count`, `trailer_name($index)`, and `trailer_value($index)` enumerate
+fields. `remove_trailer($name)` removes all matches. `has_trailers()` reports
+whether any trailer fields are currently present. The sender decides which
+fields are legal trailers and how to send them.
+
 ## Bodies
 
 `body()` represents a body that is already buffered in memory.
@@ -156,26 +170,62 @@ $response->freeze;
 
 After `freeze()`, setters throw an exception.
 
-`is_mutable()` reports whether the current representation can still be
-changed.
+For incremental receipt, fix the initial data while leaving room for trailers:
 
-`is_complete()` reports whether the whole message is known to be complete.
-Adapters may return `undef` when their framework cannot know yet.
+```perl
+my $response = Uniform::HTTP::Response->new(status => 200)
+    ->mark_incomplete->freeze_initial;
 
-## HTTP/2 and HTTP/3
+# The HTTP implementation receives the body outside Uniform.
+$response->add_trailer('Content-Digest', $digest_field_value);
+$response->mark_complete->freeze;
+```
 
-Uniform::HTTP does not implement HTTP/2 or HTTP/3. It only represents the HTTP
-message semantics those protocols carry.
+`freeze_initial()` locks headers, version, and request/response metadata.
+`freeze_trailers()` can lock just the trailers. `freeze()` locks all data.
+None of these methods sends anything.
 
-Requests have separate `scheme()`, `authority()`, and `target()` values so
-HTTP/1, HTTP/2, and HTTP/3 implementations can map their native request data
-without losing meaning.
+`is_mutable()` means some part can change. Use `initial_is_mutable()`,
+`body_is_mutable()`, or `trailers_are_mutable()` to check a particular part.
+`is_complete()` separately reports whether the whole message has arrived,
+including trailers. Marking complete does not freeze an object.
 
-For ordinary HTTP/2 or HTTP/3 CONNECT, the exact `:authority` value is used as
-the authority-form request target.
+## HTTP/1, HTTP/2, and HTTP/3
 
-Protocol-specific validation and wire framing remain the job of the HTTP
-implementation.
+The same message classes work across all three versions. Leave `version`
+unset for an application-created message; the HTTP implementation can choose
+its sending version without changing your object. Received messages can report
+their actual version.
+
+Ordinary CONNECT uses an authority-form target:
+
+```perl
+my $connect = Uniform::HTTP::Request->new(
+    method    => 'CONNECT',
+    target    => 'example.com:443',
+    authority => 'example.com:443',
+);
+```
+
+Extended CONNECT adds a protocol name and uses a path target:
+
+```perl
+my $connect = Uniform::HTTP::Request->new(
+    method    => 'CONNECT',
+    protocol  => 'websocket',
+    scheme    => 'https',
+    authority => 'example.com',
+    target    => '/chat',
+);
+```
+
+`protocol` also accepts `connect-udp` and future protocol-name tokens. It is
+never inferred from an Upgrade header. Scheme and authority are never guessed
+either. The HTTP implementation handles negotiation, validation, and tunnels.
+
+Informational responses are normal response objects, such as
+`Uniform::HTTP::Response->new(status => 103)`. The HTTP implementation keeps
+track of their order and the eventual final response.
 
 ## Authentication
 
@@ -258,12 +308,18 @@ contract without subclassing the canonical classes.
 Adapters should be separate distributions. Uniform::HTTP itself does not depend
 on Mojolicious, PSGI, PAGI, Linux::Event, or another HTTP stack.
 
+Adapters report their limitations. For example, a framework that hides
+trailers returns `undef` for `trailer_count()` and `trailer_values()`, instead
+of claiming the section is empty. Header and trailer fidelity are reported
+separately. Adapters need not implement the canonical freeze helpers.
+
 Most users do not need to know the adapter rules. They are documented for HTTP
 library authors in:
 
 - `docs/MESSAGE-SPEC.md`
 - `docs/ADAPTERS.md`
 - `docs/AUTH-SPEC.md`
+- `docs/MODERN-HTTP-AUDIT.md`
 
 ## Migration from Uniform-HTTP-Auth
 

@@ -3,7 +3,7 @@ package Uniform::HTTP;
 use strict;
 use warnings;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 1;
 
@@ -36,7 +36,8 @@ Uniform::HTTP provides small HTTP message objects that are not tied to one
 client, server, framework, transport, or event loop.
 
 It gives HTTP implementations a common way to represent requests, responses,
-headers, buffered bodies, and authentication data.
+headers, trailers, buffered bodies, and authentication data across HTTP/1,
+HTTP/2, and HTTP/3.
 
 Uniform::HTTP does not open sockets, parse network traffic, serialize HTTP, or
 send requests. The surrounding HTTP implementation still owns those jobs.
@@ -75,6 +76,38 @@ lost:
 
 C<body()> only returns a body that is already buffered. It never consumes a
 stream or performs I/O.
+
+=head1 TRAILERS AND INCREMENTAL MESSAGES
+
+Trailers are separate from initial headers, with the same ordered field API:
+
+    $response->add_trailer('Content-Digest', $digest_field_value);
+    my $digest = $response->trailer('Content-Digest');
+
+For a message following external receipt:
+
+    $response->mark_incomplete->freeze_initial;
+    # Body receipt and trailer delivery happen in the HTTP implementation.
+    $response->add_trailer('Content-Digest', $digest_field_value);
+    $response->mark_complete->freeze;
+
+C<freeze_initial()> fixes headers and metadata while body and trailers can
+still be supplied. C<freeze()> fixes all data. Completeness is independent.
+See L<Uniform::HTTP::Message> for section capabilities and adapter limitations.
+
+=head1 EXTENDED CONNECT
+
+L<Uniform::HTTP::Request> accepts an optional C<protocol> token:
+
+    my $request = Uniform::HTTP::Request->new(
+        method => 'CONNECT', protocol => 'websocket',
+        scheme => 'https', authority => 'example.com', target => '/chat',
+    );
+
+Ordinary CONNECT omits C<protocol> and uses its authority-form target.
+Uniform preserves this metadata; the surrounding HTTP implementation handles
+negotiation and tunnel behavior. An unset C<version> permits a neutral message
+without requiring the sender to modify the object.
 
 =head1 AUTHENTICATION
 
@@ -143,7 +176,7 @@ F<docs/ADAPTERS.md> in the distribution.
 
 =head1 VERSION
 
-Version 0.03.
+Version 0.04.
 
 =head1 AUTHOR
 

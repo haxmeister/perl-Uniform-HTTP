@@ -5,7 +5,7 @@ use warnings;
 use Carp qw(croak);
 use parent 'Uniform::HTTP::Message';
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 sub new {
     my ($class, @args) = @_;
@@ -17,13 +17,14 @@ sub new {
                 || $name eq 'reason'
                 || $name eq 'version'
                 || $name eq 'headers'
+                || $name eq 'trailers'
                 || $name eq 'body';
     }
 
     croak 'status is required' unless exists $args->{status};
 
     my @common;
-    for my $name (qw(version headers body)) {
+    for my $name (qw(version headers trailers body)) {
         push @common, $name => $args->{$name} if exists $args->{$name};
     }
 
@@ -38,7 +39,7 @@ sub status {
     return $self->{status} unless @args;
     croak 'status() accepts at most one value' unless @args == 1;
 
-    $self->_assert_mutable;
+    $self->_assert_initial_mutable;
     my $status = $args[0];
     croak 'status must be an integer from 100 through 599'
         unless defined($status)
@@ -55,7 +56,7 @@ sub reason {
     return $self->{reason} unless @args;
     croak 'reason() accepts at most one value' unless @args == 1;
 
-    $self->_assert_mutable;
+    $self->_assert_initial_mutable;
     if (!defined $args[0]) {
         $self->{reason} = undef;
         return $self;
@@ -94,7 +95,7 @@ Uniform::HTTP::Response represents HTTP response data without sending a
 response or owning a connection, transaction, framework, or event loop.
 
 A response always has a status. It may also carry a reason phrase, version,
-headers, and a buffered body.
+headers, trailers, and a buffered body.
 
 =head1 CONSTRUCTOR
 
@@ -116,6 +117,8 @@ Optional arguments are:
 =item * C<version>
 
 =item * C<headers>
+
+=item * C<trailers>
 
 =item * C<body>
 
@@ -148,10 +151,29 @@ Set or clear it with:
 
 Uniform does not invent standard reason phrases such as C<OK>.
 
+=head1 INFORMATIONAL RESPONSES
+
+A status from 100 through 199 uses a normal Response object:
+
+    my $hints = Uniform::HTTP::Response->new(
+        status => 103,
+        headers => [ [ 'Link', '</style.css>; rel=preload' ] ],
+    );
+
+Each informational and final response is a separate object. A complete
+informational message does not mean its exchange is finished. The HTTP
+implementation owns ordering and rules such as whether 101 or a body is
+allowed in the selected protocol and request context.
+
+Status and reason setters are blocked by C<freeze_initial()> and C<freeze()>.
+Received HTTP/2 and HTTP/3 responses normally have no reason phrase.
+Application-created responses may leave C<version> unset for the sender to
+choose independently.
+
 =head1 INHERITED METHODS
 
-Headers, bodies, versions, mutability, and completeness come from
-L<Uniform::HTTP::Message>.
+Headers, trailers, bodies, versions, section mutability, and completeness
+come from L<Uniform::HTTP::Message>.
 
 =head1 SEE ALSO
 
