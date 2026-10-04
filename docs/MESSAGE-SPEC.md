@@ -30,9 +30,6 @@ $message->body
 $message->has_buffered_body
 $message->is_complete
 $message->is_mutable
-$message->commit
-$message->mark_incomplete
-$message->mark_complete
 $message->headers_are_lossless
 ```
 
@@ -46,16 +43,37 @@ $message->remove_header($name)
 $message->body($bytes)
 ```
 
-Every successful metadata mutator returns the receiving message. An adapter
-that reports false from `is_mutable()` must throw when a metadata mutator is
-attempted.
+Every successful portable mutator returns the receiving message. An adapter
+that reports false from `is_mutable()` must throw when one of these mutators
+is attempted.
 
-`commit()` makes message metadata immutable and is idempotent. It does not
-serialize, send, or otherwise perform I/O.
+`is_complete()` and `is_mutable()` are observational capabilities. The
+portable contract does not require an adapter to provide methods that change
+those states. A live adapter should derive them from the native environment
+when possible.
 
-`mark_incomplete()` and `mark_complete()` change only the completeness state.
-They remain valid after commitment so a protocol implementation can expose an
-immutable header block while an incremental body is still open.
+## Canonical lifecycle helpers
+
+The detached canonical Uniform classes additionally provide:
+
+```perl
+$message->freeze
+$message->mark_incomplete
+$message->mark_complete
+```
+
+These methods are conveniences of the canonical objects, not requirements for
+framework or protocol adapters.
+
+`freeze()` makes every represented message value immutable and is idempotent.
+That includes version, headers, a buffered body, request metadata, and response
+metadata. It does not serialize, send, commit a framework response, or
+otherwise perform I/O.
+
+`mark_incomplete()` and `mark_complete()` change only the canonical
+completeness state. They remain valid after `freeze()`, so a detached object
+can expose frozen message values while an externally managed incremental body
+moves toward completion.
 
 ## Request methods
 
@@ -80,18 +98,35 @@ $request->authority($authority)
 
 `method()` is the case-sensitive HTTP method token.
 
-`target()` is the request-target byte string used by HTTP semantics. It is not
-a URI object. Origin-form, absolute-form, authority-form, and asterisk-form are
-all representable.
+`target()` is the semantic request-target byte string used by HTTP semantics.
+It is not a URI object. Origin-form, absolute-form, authority-form, and
+asterisk-form are all representable.
+
+For HTTP/2 and HTTP/3 requests that carry `:path`, an adapter should expose
+the exact `:path` bytes through `target()` when no reconstruction is
+required.
+
+Ordinary CONNECT is the special case. It has `:authority` but no `:path`.
+An HTTP/2 or HTTP/3 adapter exposes the exact `:authority` bytes as the
+authority-form `target()`. This is still exact because the source bytes are
+copied without parsing, normalization, or synthesis. `scheme()` remains
+`undef` when the protocol did not supply a scheme.
 
 `scheme()` and `authority()` return optional request metadata. They are kept
 separate from ordinary fields because HTTP/2 and HTTP/3 carry them as
-pseudo-fields, while HTTP/1 may obtain the same semantics from request-target or
-routing context. Uniform never infers either value.
+pseudo-fields, while HTTP/1 may obtain the same semantics from request-target,
+Host, or routing context. Uniform never infers either value.
 
-`target_is_exact()` is true only when `target()` is the exact source value. An
-adapter that reconstructs the target from path, query, host, scheme, or routing
-state must return false.
+`authority()` is deliberately byte-oriented rather than a URI parser. The
+canonical class requires a nonempty byte string and rejects controls, spaces,
+`/`, `?`, and `#`. It does not validate host syntax, ports, userinfo, IP
+literals, percent escapes, or protocol-specific authority rules.
+
+`target_is_exact()` is true only when `target()` is the exact source
+semantic target value. An adapter that reconstructs the target from path,
+query, host, scheme, routing state, or other decomposed values must return
+false. The ordinary CONNECT mapping described above may return true when the
+exact source `:authority` bytes are copied unchanged.
 
 ## Response methods
 
@@ -111,14 +146,14 @@ $response->reason($reason)
 
 `status()` is an integer from 100 through 599.
 
-`reason()` is a byte string or `undef`. Implementations must not synthesize a
-reason phrase merely because a status is known.
+`reason()` is a byte string or `undef`. Implementations must not synthesize
+a reason phrase merely because a status is known.
 
 ## Version
 
-`version()` returns a numeric HTTP version without an `HTTP/` prefix, such as
-`1.0`, `1.1`, `2`, or `3`. It may return `undef` when the gateway or transport
-does not expose a meaningful version.
+`version()` returns a numeric HTTP version without an `HTTP/` prefix, such
+as `1.0`, `1.1`, `2`, or `3`. It may return `undef` when the gateway
+or transport does not expose a meaningful version.
 
 Implementations must not silently default an unknown version to `1.1`.
 
@@ -146,10 +181,11 @@ programmer error.
 On mutation, `header($name, $value)` replaces every matching occurrence with
 one field. The replacement occupies the first matching position and uses the
 spelling supplied to the mutator. If no occurrence exists, it is appended.
-`add_header()` always appends one occurrence. `remove_header()` removes every
-matching occurrence.
+`add_header()` always appends one occurrence. `remove_header()` removes
+every matching occurrence.
 
-`headers_are_lossless()` is true only when all three properties are preserved:
+`headers_are_lossless()` is true only when all three properties are
+preserved:
 
 - duplicate field occurrences
 - inter-field order
@@ -161,9 +197,9 @@ makes the loss explicit to proxies, signing code, diagnostics, and tests.
 ## Body representation
 
 `body()` returns a scalar only when the complete body is already buffered in
-the message representation. It returns `undef` when no body buffer is present.
-An empty buffered body is represented by `body() eq ''` together with a true
-`has_buffered_body()`.
+the message representation. It returns `undef` when no body buffer is
+present. An empty buffered body is represented by `body() eq ''` together
+with a true `has_buffered_body()`.
 
 Calling `body()` must never implicitly:
 
@@ -177,10 +213,14 @@ Calling `body()` must never implicitly:
 Incremental body transfer belongs to the surrounding transport or transaction.
 
 Canonical messages begin complete even when the body argument was omitted.
-A protocol implementation can call `mark_incomplete()` when an incremental
-body is open and `mark_complete()` at the message boundary. An adapter may
-return `undef` from `is_complete()` when its native environment cannot
-determine completeness.
+Their local `mark_incomplete()` and `mark_complete()` helpers can represent
+external incremental progress. Adapters instead report native completeness
+through `is_complete()` and may return `undef` when the native environment
+cannot determine it.
+
+A buffered body is part of the represented message state. Therefore
+`body($bytes)` is rejected after a canonical object is frozen or whenever an
+adapter reports that the message is immutable.
 
 ## Byte contract
 
@@ -192,8 +232,9 @@ reject prohibited control bytes. Horizontal tab and bytes from 0x80 through
 0xff remain representable. Request targets are nonempty and reject spaces and
 control bytes.
 
-This contract does not decode text, normalize URIs, parse cookies, split field
-grammar, or apply content codings.
+Authority values use the deliberately minimal validation described above. This
+contract does not decode text, normalize URIs, parse authorities, parse
+cookies, split field grammar, or apply content codings.
 
 ## Canonical constructors
 
@@ -221,10 +262,14 @@ my $response = Uniform::HTTP::Response->new(
 );
 ```
 
-Requests require `method` and `target`. Requests may also provide `scheme`
-and `authority`. Responses require `status`. `version`, `reason`,
-`headers`, and `body` are optional where applicable. No scheme, authority,
-protocol version, reason phrase, or response status is guessed.
+Requests require `method` and `target`. Requests may also provide
+`scheme` and `authority`. Responses require `status`. `version`,
+`reason`, `headers`, and `body` are optional where applicable. No scheme,
+authority, protocol version, reason phrase, or response status is guessed.
+
+For a canonical ordinary HTTP/2 or HTTP/3 CONNECT request, pass the exact
+authority bytes as both `target` and `authority`, and omit `scheme` unless
+one was actually supplied by the source protocol.
 
 The `headers` argument is an array reference of two-element name/value array
 references. A hash is intentionally not accepted because it cannot represent
@@ -235,33 +280,36 @@ Canonical objects report:
 | Capability | Result |
 | --- | --- |
 | `is_complete()` | true until explicitly marked incomplete |
-| `is_mutable()` | true until committed |
+| `is_mutable()` | true until frozen |
 | `headers_are_lossless()` | true |
 | request `target_is_exact()` | true |
 
 ## Authentication integration
 
-`Uniform::HTTP::Auth->prepare_authentication()` may accept a `request` object
-implementing the request contract. It reads `method()` and `target()`. It reads
-`body()` only when `has_buffered_body()` is true.
+`Uniform::HTTP::Auth->prepare_authentication()` may accept a `request`
+object implementing the request contract. It reads `method()` and
+`target()`. It reads `body()` only when `has_buffered_body()` is true.
 
-Explicit `method`, `request_target`, and `entity_body` arguments override the
-corresponding request values. Authentication does not make a request replayable
-and does not own retry policy.
+Explicit `method`, `request_target`, and `entity_body` arguments override
+the corresponding request values. Authentication does not make a request
+replayable and does not own retry policy.
 
 ## Explicit exclusions
 
-The contract does not include:
+The portable contract does not include:
 
 ```text
 send write respond receive parse serialize
 socket connection transaction stream
 pause resume drain cancel retry redirect
 authentication retry request replayability
+lifecycle control or framework commitment
 TLS HTTP/1 framing HTTP/2 stream HTTP/3 stream
 event loop Future promise callback policy
 PSGI writer PAGI body callback framework context
 ```
 
-An adapter can expose native operations through its own API, but those
-operations are not Uniform HTTP message methods.
+Canonical Uniform objects may expose local state helpers such as `freeze()`,
+but adapters are not required to reproduce those helpers. Native operations may
+be exposed through an adapter's own API without becoming Uniform HTTP message
+methods.
