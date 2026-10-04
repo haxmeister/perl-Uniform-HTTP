@@ -1,6 +1,6 @@
 Revision history for Uniform-HTTP
 
-0.03  Not yet released
+0.03  2026-10-04
     - Add optional request scheme and authority metadata without inference.
     - Define exact HTTP/2 and HTTP/3 ordinary CONNECT mapping by exposing the
       source :authority bytes as the semantic authority-form target.
@@ -13,6 +13,10 @@ Revision history for Uniform-HTTP
       allowing canonical completeness state to advance independently.
     - Keep message state changes free of parsing, serialization, I/O, event-loop,
       transaction, stream, or framework response commitment.
+    - Simplify the README and public module documentation around normal use,
+      while keeping detailed adapter and contract documents for implementers.
+    - Add standard CPAN, CI, license, and Perl badges to the README.
+    - Keep repository-only metadata out of the release tarball.
 
 0.02  2026-09-13
     - Rename the distribution from Uniform-HTTP-Auth to Uniform-HTTP.
