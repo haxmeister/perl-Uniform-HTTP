@@ -14,7 +14,7 @@ No Uniform method sends data or changes a connection or framework lifecycle.
 
 ## Common methods
 
-Every 0.04 message provides these observations:
+Every 0.05 message provides these observations:
 
 ```perl
 $message->version
