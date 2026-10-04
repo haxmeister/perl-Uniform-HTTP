@@ -281,7 +281,7 @@ __END__
 
 =head1 NAME
 
-Uniform::HTTP::Message - Lossless framework-neutral HTTP message
+Uniform::HTTP::Message - Common HTTP message behavior
 
 =head1 SYNOPSIS
 
@@ -299,129 +299,172 @@ Uniform::HTTP::Message - Lossless framework-neutral HTTP message
 
 =head1 DESCRIPTION
 
-Uniform::HTTP::Message is the shared semantic base for requests and responses.
-It preserves duplicate fields, field order, and original field-name spelling.
-It performs no parsing, serialization, encoding, or I/O.
+Uniform::HTTP::Message is the common base for
+L<Uniform::HTTP::Request> and L<Uniform::HTTP::Response>.
 
-Canonical messages begin mutable, complete, and lossless. The portable Uniform
-contract exposes that state through C<is_mutable> and C<is_complete>. Canonical
-objects additionally provide C<freeze>, C<mark_incomplete>, and
-C<mark_complete> as local state-management helpers. Adapters may implement the
-portable contract without providing those helpers and need not subclass a
-Uniform class.
+It stores HTTP version, headers, and an optional buffered body. It does not
+parse HTTP, send data, read streams, or perform network I/O.
+
+Headers preserve duplicate fields, field order, and original field-name
+spelling.
+
+Most applications will create Request or Response objects rather than using
+Message directly.
 
 =head1 CONSTRUCTOR
 
 =head2 new
 
-Accepts optional C<version>, C<headers>, and C<body> named arguments.
-C<headers> must be an array reference of two-element array references. An
-omitted body is distinct from a buffered empty string.
+    my $message = Uniform::HTTP::Message->new(
+        version => '1.1',
+        headers => [
+            [ 'Content-Type', 'text/plain' ],
+        ],
+        body => 'hello',
+    );
 
-=head1 METHODS
+All arguments are optional.
 
-=head2 version
+C<headers> must be an array reference containing C<[ name, value ]> pairs.
 
-Returns the HTTP version without an C<HTTP/> prefix, or C<undef> when no
-version is represented. Passing a version sets it; passing C<undef> clears it.
+=head1 HEADERS
 
 =head2 header
 
-Returns the first matching field value using ASCII case-insensitive matching.
-Passing a value replaces every matching occurrence with one field at the
-position of the first occurrence, or appends it when the field was absent.
+    my $value = $message->header('Content-Type');
+
+Returns the first matching value. Header names are matched
+case-insensitively.
+
+Set or replace a header with:
+
+    $message->header('Content-Type', 'application/json');
+
+When duplicate fields already exist, the setter replaces them with one field.
 
 =head2 header_values
 
-Returns an array reference containing every matching value in message order.
-Values are never comma-joined.
+    my $values = $message->header_values('Set-Cookie');
+
+Returns an array reference containing every matching value in order.
 
 =head2 add_header
 
-Appends one field occurrence and returns the message.
+    $message->add_header('Set-Cookie', 'c=3');
+
+Appends one new field without replacing existing fields.
 
 =head2 remove_header
 
-Removes every matching field occurrence and returns the message.
+    $message->remove_header('X-Debug');
+
+Removes every matching field.
 
 =head2 header_count
 
-Returns the number of field occurrences.
+Returns the number of header field occurrences.
 
 =head2 header_name
 
-Returns the original field name at a zero-based index. An index beyond the end
-returns C<undef>.
+    my $name = $message->header_name($index);
+
+Returns the original field name at a zero-based index.
 
 =head2 header_value
 
-Returns the field value at a zero-based index. An index beyond the end returns
-C<undef>.
+    my $value = $message->header_value($index);
 
-=head2 body
-
-Returns buffered body bytes, or C<undef> when no body buffer is present.
-Passing a defined byte string installs a complete body buffer and returns the
-message. It never reads a stream, filehandle, callback, or framework input.
-
-=head2 has_buffered_body
-
-Returns true only when C<body()> is locally available, including an empty
-buffer.
-
-=head2 is_complete
-
-Returns the current message-completeness state. Canonical messages begin
-complete. An adapter may return true, false, or C<undef> when the native
-environment cannot determine completeness.
-
-=head2 is_mutable
-
-Returns whether represented message values can still be changed. Canonical
-messages begin mutable. An adapter reports the mutability of its native or
-snapshotted representation.
-
-=head1 CANONICAL LIFECYCLE HELPERS
-
-These helpers belong to the canonical Uniform message classes. They are not
-required methods for framework or protocol adapters.
-
-=head2 freeze
-
-Makes the represented message values immutable and returns the message. It is
-idempotent and does not send, serialize, commit a framework response, or
-otherwise perform I/O. Setters for headers, body, version, request metadata,
-and response metadata all throw after the object is frozen.
-
-=head2 mark_incomplete
-
-Marks the canonical message incomplete and returns it. This is useful when a
-complete header block is available but an incremental body remains open.
-
-=head2 mark_complete
-
-Marks the canonical message complete and returns it. It remains available after
-C<freeze> and does not imply that a body was buffered.
+Returns the field value at a zero-based index.
 
 =head2 headers_are_lossless
 
-Returns true when duplicate occurrences, inter-field order, and original
-field-name spelling are faithfully represented.
+Returns true for canonical Uniform messages because duplicate fields, order,
+and original field-name spelling are preserved.
 
-=head1 BYTE CONTRACT
+Adapters may return false when their native framework cannot preserve all of
+those details.
 
-Methods accept Perl byte strings. Values containing characters outside the
-byte range are rejected; no encoding is guessed. Field names are HTTP tokens.
-Field values reject prohibited control bytes while permitting horizontal tab
-and bytes from 0x80 through 0xff.
+=head1 BODY
 
-=head1 MUTATION
+=head2 body
 
-All successful portable mutators return the receiving object. Canonical
-messages begin mutable. After C<freeze>, every represented message-value
-mutator, including C<body($bytes)>, throws. Completeness state is independent
-of value mutability, so a frozen canonical streaming message can still move
-from incomplete to complete as its body finishes externally.
+    my $bytes = $message->body;
+
+Returns the buffered body, or C<undef> when no buffered body is present.
+
+Set a buffered body with:
+
+    $message->body($bytes);
+
+Calling C<body()> never reads a socket, filehandle, callback, or streaming
+source.
+
+=head2 has_buffered_body
+
+Returns true when C<body()> contains a buffered body. An empty string still
+counts as a buffered body.
+
+=head1 VERSION
+
+=head2 version
+
+    my $version = $message->version;
+
+Returns values such as C<1.1>, C<2>, or C<3>, without an C<HTTP/> prefix.
+
+Set or clear it with:
+
+    $message->version('2');
+    $message->version(undef);
+
+=head1 MESSAGE STATE
+
+=head2 is_mutable
+
+Returns true while the represented message values can still be changed.
+
+Canonical Uniform messages begin mutable.
+
+=head2 freeze
+
+    $message->freeze;
+
+Freezes a canonical Uniform object. After this, setters throw an exception.
+
+C<freeze()> only changes the local object. It does not send headers, commit a
+framework response, or perform I/O.
+
+=head2 is_complete
+
+Returns true when the message is known to be complete.
+
+Canonical objects begin complete. An adapter may return C<undef> when its
+framework cannot determine completeness yet.
+
+=head2 mark_incomplete
+
+Marks a canonical message incomplete.
+
+=head2 mark_complete
+
+Marks a canonical message complete.
+
+These two helpers are useful when a detached Uniform object is following
+externally managed streaming progress.
+
+=head1 BYTE STRINGS
+
+Message values are byte strings. Uniform::HTTP does not guess a character
+encoding.
+
+Header names must be valid HTTP tokens. Header values reject prohibited
+control bytes.
+
+=head1 SEE ALSO
+
+L<Uniform::HTTP>, L<Uniform::HTTP::Request>, L<Uniform::HTTP::Response>.
+
+The full adapter contract is documented in F<docs/MESSAGE-SPEC.md>.
 
 =head1 AUTHOR
 
