@@ -98,7 +98,7 @@ sub authority {
         'authority', $args[0],
     );
     croak 'authority must not be empty' unless length $authority;
-    croak 'authority contains characters outside an HTTP authority'
+    croak 'authority contains a prohibited delimiter or control byte'
         if $authority =~ /[\x00-\x20\x7f\/?#]/;
     $self->{authority} = $authority;
     return $self;
@@ -123,13 +123,13 @@ Uniform::HTTP::Request - Framework-neutral HTTP request
     use Uniform::HTTP::Request;
 
     my $request = Uniform::HTTP::Request->new(
-        method  => 'POST',
+        method    => 'POST',
         target    => '/items?draft=1',
         scheme    => 'https',
         authority => 'example.com',
         version   => '1.1',
-        headers => [ [ 'Content-Type', 'application/json' ] ],
-        body    => '{"name":"example"}',
+        headers   => [ [ 'Content-Type', 'application/json' ] ],
+        body      => '{"name":"example"}',
     );
 
 =head1 DESCRIPTION
@@ -156,13 +156,20 @@ returns the request.
 
 =head2 target
 
-Returns the HTTP request-target as bytes, not as a URI object. Passing a target
-sets it and returns the request.
+Returns the semantic HTTP request-target as bytes, not as a URI object.
+Passing a target sets it and returns the request.
+
+For HTTP/2 and HTTP/3 requests that carry C<:path>, an adapter should expose
+the exact C<:path> bytes here when no reconstruction is required. Ordinary
+CONNECT is the special case: it has no C<:path>, so an adapter exposes the
+exact C<:authority> bytes as the authority-form target. That mapping remains
+exact because the bytes are copied without parsing or normalization.
 
 =head2 scheme
 
 Returns the URI scheme associated with the request, or C<undef> when none is
 represented. Passing a valid URI scheme sets it; passing C<undef> clears it.
+Uniform never infers a scheme from the target or transport.
 
 =head2 authority
 
@@ -170,11 +177,18 @@ Returns the request authority, or C<undef> when none is represented. Passing an
 authority sets it; passing C<undef> clears it. Uniform does not synthesize an
 authority from Host or from the request target.
 
+The canonical class deliberately performs only minimal byte-level validation:
+the value must be nonempty and must not contain controls, spaces, C</>, C<?>,
+or C<#>. It does not parse hosts, ports, userinfo, IP literals, or percent
+escapes, and it does not apply protocol-specific authority rules.
+
 =head2 target_is_exact
 
 Returns true for canonical requests because C<target()> is exactly the value
 supplied by the caller. An adapter returns false when it had to reconstruct a
-target from framework data.
+target from decomposed framework data. An HTTP/2 or HTTP/3 adapter may return
+true for ordinary CONNECT when it copies the exact C<:authority> bytes into
+C<target()> as described above.
 
 =head1 INHERITED METHODS
 
