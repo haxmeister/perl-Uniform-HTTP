@@ -142,6 +142,11 @@ HTTP request data.
 
 HTTP response data.
 
+=item * L<Uniform::HTTP::FastPath>
+
+Optional versioned bulk access for native-backed HTTP engines. Normal application
+code does not need it.
+
 =item * L<Uniform::HTTP::Auth>
 
 HTTP Basic, Bearer, and Digest authentication.
