@@ -271,6 +271,24 @@ Most applications should use `Uniform::HTTP::Auth` directly. The
 `Basic`, `Bearer`, and `Digest` submodules are also available for code that
 only wants the lower-level calculations.
 
+## Native fast path
+
+Native-backed HTTP engines can optionally use `Uniform::HTTP::FastPath`.
+
+It provides a versioned fixed-layout view of exact canonical Uniform request
+and response objects so an XS-backed implementation can collect message data
+in one operation instead of repeatedly calling Perl accessors. It also provides
+trusted constructors for protocol engines that have already validated the
+message values.
+
+Normal application code does not need this module. The ordinary constructors
+keep their full validation, and adapters or subclasses simply use the portable
+message API.
+
+The fast path performs no parsing, serialization, I/O, or protocol negotiation.
+See `Uniform::HTTP::FastPath` for the ABI, borrowing rules, and trusted
+construction contract.
+
 ## What Uniform::HTTP does not do
 
 Uniform::HTTP deliberately does not own:
@@ -295,6 +313,7 @@ The distribution contains:
 - `Uniform::HTTP::Message` - shared message behavior
 - `Uniform::HTTP::Request` - HTTP requests
 - `Uniform::HTTP::Response` - HTTP responses
+- `Uniform::HTTP::FastPath` - optional versioned bulk access for native engines
 - `Uniform::HTTP::Auth` - HTTP authentication
 - `Uniform::HTTP::Auth::Basic`
 - `Uniform::HTTP::Auth::Bearer`
