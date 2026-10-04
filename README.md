@@ -10,7 +10,7 @@ another's object model.
 ## Modules
 
 - `Uniform::HTTP::Message` represents common message state.
-- `Uniform::HTTP::Request` adds method and exact request-target semantics.
+- `Uniform::HTTP::Request` adds method, target, scheme, and authority semantics.
 - `Uniform::HTTP::Response` adds status and optional reason semantics.
 - `Uniform::HTTP::Auth` implements Basic, Bearer, and Digest authentication.
 
@@ -24,9 +24,11 @@ use Uniform::HTTP::Request;
 use Uniform::HTTP::Response;
 
 my $request = Uniform::HTTP::Request->new(
-    method  => 'POST',
-    target  => '/items?draft=1',
-    version => '1.1',
+    method    => 'POST',
+    target    => '/items?draft=1',
+    scheme    => 'https',
+    authority => 'example.com',
+    version   => '1.1',
     headers => [
         [ 'Content-Type', 'application/json' ],
         [ 'X-Trace',      'one' ],
@@ -50,6 +52,10 @@ and repeated values are never silently comma-joined.
 Bodies and header values are bytes. A message never consumes an input stream,
 filehandle, callback, PSGI input object, or PAGI body source merely because
 `body()` was called.
+
+Canonical messages begin complete and mutable. `commit()` freezes metadata,
+while `mark_incomplete()` and `mark_complete()` let a protocol implementation
+track an incremental body without putting transport behavior into Uniform.
 
 ## Authentication
 
