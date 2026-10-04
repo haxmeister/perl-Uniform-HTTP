@@ -15,7 +15,7 @@ Uniform::HTTP - Framework-neutral HTTP messages and authentication
 
 =head1 VERSION
 
-Version 0.02.
+Version 0.03.
 
 =head1 DESCRIPTION
 
