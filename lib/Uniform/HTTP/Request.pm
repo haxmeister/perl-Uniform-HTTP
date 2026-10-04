@@ -15,6 +15,8 @@ sub new {
         croak "unknown constructor option '$name'"
             unless $name eq 'method'
                 || $name eq 'target'
+                || $name eq 'scheme'
+                || $name eq 'authority'
                 || $name eq 'version'
                 || $name eq 'headers'
                 || $name eq 'body';
@@ -31,6 +33,8 @@ sub new {
     my $self = $class->SUPER::new(@common);
     $self->method($args->{method});
     $self->target($args->{target});
+    $self->scheme($args->{scheme}) if exists $args->{scheme};
+    $self->authority($args->{authority}) if exists $args->{authority};
     return $self;
 }
 
@@ -61,6 +65,45 @@ sub target {
     return $self;
 }
 
+sub scheme {
+    my ($self, @args) = @_;
+    return $self->{scheme} unless @args;
+    croak 'scheme() accepts at most one value' unless @args == 1;
+
+    $self->_assert_mutable;
+    if (!defined $args[0]) {
+        $self->{scheme} = undef;
+        return $self;
+    }
+
+    my $scheme = Uniform::HTTP::Message::_byte_string('scheme', $args[0]);
+    croak 'scheme must be a valid URI scheme'
+        unless $scheme =~ /\A[A-Za-z][A-Za-z0-9+.-]*\z/;
+    $self->{scheme} = $scheme;
+    return $self;
+}
+
+sub authority {
+    my ($self, @args) = @_;
+    return $self->{authority} unless @args;
+    croak 'authority() accepts at most one value' unless @args == 1;
+
+    $self->_assert_mutable;
+    if (!defined $args[0]) {
+        $self->{authority} = undef;
+        return $self;
+    }
+
+    my $authority = Uniform::HTTP::Message::_byte_string(
+        'authority', $args[0],
+    );
+    croak 'authority must not be empty' unless length $authority;
+    croak 'authority contains characters outside an HTTP authority'
+        if $authority =~ /[\x00-\x20\x7f\/?#]/;
+    $self->{authority} = $authority;
+    return $self;
+}
+
 sub target_is_exact {
     my ($self, @args) = @_;
     croak 'target_is_exact() does not accept arguments' if @args;
@@ -81,8 +124,10 @@ Uniform::HTTP::Request - Framework-neutral HTTP request
 
     my $request = Uniform::HTTP::Request->new(
         method  => 'POST',
-        target  => '/items?draft=1',
-        version => '1.1',
+        target    => '/items?draft=1',
+        scheme    => 'https',
+        authority => 'example.com',
+        version   => '1.1',
         headers => [ [ 'Content-Type', 'application/json' ] ],
         body    => '{"name":"example"}',
     );
@@ -97,8 +142,10 @@ or connection.
 
 =head2 new
 
-Requires named C<method> and C<target> arguments. It also accepts the common
-C<version>, C<headers>, and C<body> arguments.
+Requires named C<method> and C<target> arguments. It also accepts optional
+C<scheme> and C<authority> request metadata plus the common C<version>,
+C<headers>, and C<body> arguments. Scheme and authority are never inferred from
+the target.
 
 =head1 METHODS
 
@@ -111,6 +158,17 @@ returns the request.
 
 Returns the HTTP request-target as bytes, not as a URI object. Passing a target
 sets it and returns the request.
+
+=head2 scheme
+
+Returns the URI scheme associated with the request, or C<undef> when none is
+represented. Passing a valid URI scheme sets it; passing C<undef> clears it.
+
+=head2 authority
+
+Returns the request authority, or C<undef> when none is represented. Passing an
+authority sets it; passing C<undef> clears it. Uniform does not synthesize an
+authority from Host or from the request target.
 
 =head2 target_is_exact
 
