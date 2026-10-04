@@ -1,6 +1,6 @@
 Revision history for Uniform-HTTP
 
-0.04  Not yet released
+0.04  2026-10-04
     - Add separate ordered trailer fields to Message, Request, and Response,
       preserving duplicate fields, spelling, order, and bytes.
     - Add generic Request protocol metadata for Extended CONNECT without
@@ -14,6 +14,7 @@ Revision history for Uniform-HTTP
       informational responses without introducing protocol or stream machinery.
     - Document the modern HTTP standards audit, adapter upgrade contract, and
       simple usage examples. Add byte, lifecycle, and modern semantic tests.
+    - Declare the test dependency explicitly while retaining Perl 5.16 support.
 
 0.03  2026-10-04
     - Add optional request scheme and authority metadata without inference.

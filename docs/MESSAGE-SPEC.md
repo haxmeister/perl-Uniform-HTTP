@@ -1,6 +1,6 @@
 # Uniform::HTTP Message Contract 0.04
 
-Status: prepared for 0.04; not released.
+Status: message contract for Uniform-HTTP 0.04.
 
 ## Purpose
 
