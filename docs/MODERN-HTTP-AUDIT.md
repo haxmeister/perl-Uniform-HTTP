@@ -1,6 +1,6 @@
 # Modern HTTP message audit
 
-Reviewed 2026-10-04 for Uniform::HTTP 0.04. This records message-model decisions,
+Reviewed 2026-10-04 for Uniform::HTTP 0.05. This records message-model decisions,
 not a claim that Uniform validates or implements every protocol requirement.
 
 ## Standards and decisions
@@ -65,7 +65,7 @@ abort reasons, retryability, and transport-close events stay outside the object.
 
 ## Compatibility assessment
 
-No new runtime dependency or class is needed. The 0.03 full-freeze behavior,
+No new runtime dependency is needed. Uniform::HTTP::FastPath is an optional\nimplementer interface and does not change the message model. The 0.03 full-freeze behavior,
 constructor defaults, targets, headers, body access, and authentication APIs
 remain available. The intentional adapter-contract refinement is that
 `is_mutable()` can now describe partial mutability; consumers needing to edit

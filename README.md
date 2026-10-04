@@ -273,21 +273,14 @@ only wants the lower-level calculations.
 
 ## Native fast path
 
-Native-backed HTTP engines can optionally use `Uniform::HTTP::FastPath`.
+Native-backed HTTP engines can optionally use `Uniform::HTTP::FastPath` to
+read a canonical message in one operation or build one from data they have
+already validated.
 
-It provides a versioned fixed-layout view of exact canonical Uniform request
-and response objects so an XS-backed implementation can collect message data
-in one operation instead of repeatedly calling Perl accessors. It also provides
-trusted constructors for protocol engines that have already validated the
-message values.
+Normal application code does not need it. Adapters and subclasses continue to
+use the portable message API.
 
-Normal application code does not need this module. The ordinary constructors
-keep their full validation, and adapters or subclasses simply use the portable
-message API.
-
-The fast path performs no parsing, serialization, I/O, or protocol negotiation.
-See `Uniform::HTTP::FastPath` for the ABI, borrowing rules, and trusted
-construction contract.
+See `Uniform::HTTP::FastPath` for the ABI and ownership rules.
 
 ## What Uniform::HTTP does not do
 

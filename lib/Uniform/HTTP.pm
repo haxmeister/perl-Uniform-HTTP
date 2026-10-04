@@ -3,7 +3,7 @@ package Uniform::HTTP;
 use strict;
 use warnings;
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 1;
 
@@ -181,7 +181,7 @@ F<docs/ADAPTERS.md> in the distribution.
 
 =head1 VERSION
 
-Version 0.04.
+Version 0.05.
 
 =head1 AUTHOR
 
