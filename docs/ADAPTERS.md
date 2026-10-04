@@ -44,10 +44,16 @@ Every adapter must document these facts for requests and responses separately:
 | Is the request-target exact? | Reflect this in `target_is_exact()`. |
 | Is the complete body buffered? | Reflect this in `has_buffered_body()`. |
 | Is message completeness known? | Return true, false, or `undef` from `is_complete()`. |
-| Can the response already be committed? | Prevent mutation after commitment. |
+| Has the native message become immutable? | Reflect that through `is_mutable()`. |
 
 Capability methods report the current object state, not the adapter's best-case
 behavior.
+
+The portable contract requires adapters to report mutability and completeness.
+It does not require them to provide methods that change those states. The
+canonical Uniform classes have local `freeze()`, `mark_incomplete()`, and
+`mark_complete()` helpers, but an adapter normally derives state from its
+native object instead.
 
 ## Header adaptation
 
@@ -75,10 +81,30 @@ must report immutable rather than partially pretending to implement mutation.
 Prefer an untouched native request-target or request URI byte string. Do not
 parse and reserialize it merely for convenience.
 
+For HTTP/2 and HTTP/3 requests carrying `:path`, expose those exact bytes
+through `target()` when possible.
+
+Ordinary CONNECT is the special case. It has `:authority` but no `:path`.
+Map the exact source `:authority` bytes to `target()` as an authority-form
+target and also expose them through `authority()`. This does not count as
+reconstruction, so `target_is_exact()` may remain true. Do not invent a
+scheme for ordinary CONNECT.
+
 When only decomposed gateway values exist, an adapter may reconstruct the best
 available target, but `target_is_exact()` must be false. In particular, path
 normalization, percent-escape normalization, authority reconstruction, and
 query-string reconstruction can change authentication and signature inputs.
+
+## Scheme and authority adaptation
+
+Expose native scheme and authority metadata only when the source environment
+actually represents those values. Do not synthesize them simply to make an
+adapter look more complete.
+
+Uniform intentionally does not require full URI-authority parsing. The core
+contract treats authority as a minimally checked byte string. An HTTP/2,
+HTTP/3, framework, or application adapter remains responsible for any stricter
+rules imposed by its own protocol or native API.
 
 ## Body adaptation
 
@@ -93,11 +119,17 @@ appropriate.
 A response adapter must not invoke a responder, writer, drain callback, or
 framework finalization operation from any Uniform method.
 
-## Mutation and commitment
+## Mutation and native commitment
 
 An adapter around a mutable native object may return true from `is_mutable()`.
-Once the framework commits or freezes the message, it must return false and all
-Uniform mutators must throw.
+Once the framework commits, freezes, or otherwise prevents changes to the
+native message, the adapter must return false and all Uniform mutators must
+throw.
+
+Uniform does not require an adapter method that causes native commitment. In
+particular, the canonical `freeze()` helper is not a portable adapter method
+and must not be interpreted as permission to send headers, finalize a response,
+or change framework lifecycle state.
 
 Do not silently copy on mutation unless the adapter type is explicitly
 documented as a snapshot adapter. A caller must be able to know whether it is
@@ -117,6 +149,7 @@ points:
 | Dancer2 | Framework request/response lifetime and mutation boundary. |
 | Catalyst | Context ownership and response commitment. |
 | Linux::Event::HTTP | Keep connection, transaction, progress, and protocol handoff outside messages. |
+| HTTP/2 or HTTP/3 engines | Preserve exact pseudo-field semantics, especially ordinary CONNECT. |
 
 These concerns do not justify framework-specific exceptions in the core
 contract. They are the reason the capability methods exist.
@@ -131,11 +164,13 @@ An adapter test suite should verify at minimum:
 - exact indexed header behavior and capability reporting
 - no implicit body reads
 - truthful request-target fidelity
+- exact ordinary CONNECT mapping when applicable
+- truthful scheme and authority exposure
 - truthful completeness and mutability state
 - chainable successful mutations
 - exceptions for mutation while immutable
 - byte semantics without encoding guesses
-- no transport or framework lifecycle side effects from getters
+- no transport or framework lifecycle side effects from Uniform methods
 
 Tests should cover native representations containing multiple `Set-Cookie`
 occurrences because generic comma handling frequently corrupts that field.
