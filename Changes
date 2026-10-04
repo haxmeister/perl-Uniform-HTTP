@@ -2,10 +2,17 @@ Revision history for Uniform-HTTP
 
 0.03  Not yet released
     - Add optional request scheme and authority metadata without inference.
-    - Add transport-neutral message commitment and complete/incomplete state so
-      live protocol adapters can report streaming message state truthfully.
+    - Define exact HTTP/2 and HTTP/3 ordinary CONNECT mapping by exposing the
+      source :authority bytes as the semantic authority-form target.
+    - Keep authority handling deliberately minimal and byte-oriented instead of
+      turning Uniform into a URI parser or protocol validator.
+    - Keep is_complete() and is_mutable() as portable adapter capabilities.
+    - Add canonical-only freeze(), mark_incomplete(), and mark_complete()
+      helpers for detached Uniform message objects.
+    - Freeze all represented message values, including a buffered body, while
+      allowing canonical completeness state to advance independently.
     - Keep message state changes free of parsing, serialization, I/O, event-loop,
-      transaction, or stream ownership.
+      transaction, stream, or framework response commitment.
 
 0.02  2026-09-13
     - Rename the distribution from Uniform-HTTP-Auth to Uniform-HTTP.
