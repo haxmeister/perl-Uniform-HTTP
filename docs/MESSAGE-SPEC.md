@@ -1,6 +1,6 @@
-# Uniform::HTTP Message Contract 0.02
+# Uniform::HTTP Message Contract 0.03
 
-Status: release contract for version 0.02.
+Status: development contract for version 0.03.
 
 ## Purpose
 
