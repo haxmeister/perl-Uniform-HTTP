@@ -24,6 +24,8 @@ sub new {
         headers           => [],
         body              => undef,
         has_buffered_body => 0,
+        complete          => 1,
+        mutable           => 1,
     }, $class;
 
     $self->version($args->{version}) if exists $args->{version};
@@ -168,13 +170,34 @@ sub has_buffered_body {
 sub is_complete {
     my ($self, @args) = @_;
     croak 'is_complete() does not accept arguments' if @args;
-    return 1;
+    return $self->{complete} ? 1 : 0;
 }
 
 sub is_mutable {
     my ($self, @args) = @_;
     croak 'is_mutable() does not accept arguments' if @args;
-    return 1;
+    return $self->{mutable} ? 1 : 0;
+}
+
+sub commit {
+    my ($self, @args) = @_;
+    croak 'commit() does not accept arguments' if @args;
+    $self->{mutable} = 0;
+    return $self;
+}
+
+sub mark_incomplete {
+    my ($self, @args) = @_;
+    croak 'mark_incomplete() does not accept arguments' if @args;
+    $self->{complete} = 0;
+    return $self;
+}
+
+sub mark_complete {
+    my ($self, @args) = @_;
+    croak 'mark_complete() does not accept arguments' if @args;
+    $self->{complete} = 1;
+    return $self;
 }
 
 sub headers_are_lossless {
@@ -280,9 +303,10 @@ Uniform::HTTP::Message is the shared semantic base for requests and responses.
 It preserves duplicate fields, field order, and original field-name spelling.
 It performs no parsing, serialization, encoding, or I/O.
 
-The canonical class is mutable, complete, and lossless. Adapters may implement
-the same methods without subclassing, but must report their capabilities
-accurately.
+Canonical messages begin mutable, complete, and lossless. Protocol engines and
+adapters may commit message metadata and may mark a message incomplete while an
+incremental body is still arriving. These state changes do not perform I/O.
+Adapters may implement the same contract without subclassing.
 
 =head1 CONSTRUCTOR
 
@@ -345,13 +369,29 @@ buffer.
 
 =head2 is_complete
 
-Returns true for canonical messages. An adapter may return true, false, or
-C<undef> when the native environment cannot determine completeness.
+Returns the current message-completeness state. Canonical messages begin
+complete. C<mark_incomplete> and C<mark_complete> allow a protocol engine or
+adapter to track incremental message assembly without owning the transport.
 
 =head2 is_mutable
 
-Returns true for canonical messages. Adapter mutators must throw when this is
-false.
+Returns whether message metadata can still be changed. Canonical messages begin
+mutable. C<commit> makes metadata immutable.
+
+=head2 commit
+
+Marks message metadata immutable and returns the message. It is idempotent and
+does not send, serialize, or otherwise perform I/O.
+
+=head2 mark_incomplete
+
+Marks the message incomplete and returns it. This is useful when a complete
+header block has been received but an incremental body remains open.
+
+=head2 mark_complete
+
+Marks the message complete and returns it. It does not imply that a body was
+buffered.
 
 =head2 headers_are_lossless
 
@@ -367,9 +407,10 @@ and bytes from 0x80 through 0xff.
 
 =head1 MUTATION
 
-All successful mutators return the receiving object. Canonical messages are
-mutable. Read-only or committed adapters report false from C<is_mutable()> and
-throw if a mutator is attempted.
+All successful metadata mutators return the receiving object. Canonical
+messages begin mutable. After C<commit>, metadata mutators throw. Completeness
+is independent of metadata mutability so a committed streaming message can move
+from incomplete to complete as its body finishes.
 
 =head1 AUTHOR
 
