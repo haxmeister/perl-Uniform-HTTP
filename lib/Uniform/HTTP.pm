@@ -3,7 +3,7 @@ package Uniform::HTTP;
 use strict;
 use warnings;
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 1;
 
@@ -41,6 +41,10 @@ HTTP/2, and HTTP/3.
 
 Uniform::HTTP does not open sockets, parse network traffic, serialize HTTP, or
 send requests. The surrounding HTTP implementation still owns those jobs.
+
+Uniform::HTTP is pure Perl and requires Perl 5.16 or newer. No C compiler is
+needed to install it. XS-based engines may use its optional native header;
+ordinary applications use the Perl API.
 
 =head1 START HERE
 
@@ -181,7 +185,7 @@ F<docs/ADAPTERS.md> in the distribution.
 
 =head1 VERSION
 
-Version 0.05.
+Version 0.06.
 
 =head1 AUTHOR
 

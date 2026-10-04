@@ -3,6 +3,9 @@
 Reviewed 2026-10-04 for Uniform::HTTP 0.05. This records message-model decisions,
 not a claim that Uniform validates or implements every protocol requirement.
 
+The same message model applies to Uniform::HTTP 0.06. Its native header
+adds an optional construction and inspection path without changing the model.
+
 ## Standards and decisions
 
 The following documents were reviewed for concepts that affect the common
@@ -65,7 +68,8 @@ abort reasons, retryability, and transport-close events stay outside the object.
 
 ## Compatibility assessment
 
-No new runtime dependency is needed. Uniform::HTTP::FastPath is an optional\nimplementer interface and does not change the message model. The 0.03 full-freeze behavior,
+No new runtime dependency is needed. Uniform::HTTP::FastPath is an optional
+implementer interface and does not change the message model. The 0.03 full-freeze behavior,
 constructor defaults, targets, headers, body access, and authentication APIs
 remain available. The intentional adapter-contract refinement is that
 `is_mutable()` can now describe partial mutability; consumers needing to edit

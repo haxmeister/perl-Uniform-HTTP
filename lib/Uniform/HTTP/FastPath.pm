@@ -8,7 +8,7 @@ use Uniform::HTTP::Message ();
 use Uniform::HTTP::Request ();
 use Uniform::HTTP::Response ();
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 use constant ABI_VERSION => 1;
 
@@ -431,7 +431,7 @@ The ordinary public constructors remain fully validated.
 
 =head1 VERSION
 
-Module version 0.05. Fast-path ABI version 1.
+Module version 0.06. Perl and native FastPath ABI versions are both 1.
 
 =head1 AUTHOR
 

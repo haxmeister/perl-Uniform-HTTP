@@ -1,4 +1,4 @@
-# Uniform::HTTP Adapter Guide 0.05
+# Uniform::HTTP Adapter Guide 0.06
 
 ## Distribution boundary
 
@@ -206,6 +206,10 @@ changing the native message or a detached Uniform value.
 ABI version 1 works only with exact canonical Uniform message classes. Adapters
 and subclasses use the portable methods in this guide and must not imitate
 canonical private storage to opt into the fast path.
+
+The optional native header added in 0.06 follows the same rule. It is compiled
+by XS consumers; Uniform::HTTP remains pure Perl. See [Native FastPath](NATIVE-FASTPATH.md)
+for construction, inspection, compatibility, and ownership rules.
 
 ## Framework checklist
 

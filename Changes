@@ -1,6 +1,6 @@
 Revision history for Uniform-HTTP
 
-Unreleased
+0.06  2026-10-04
     - Ship a versioned, header-only native FastPath for XS consumers while
       keeping Uniform::HTTP pure Perl with no compiler needed for installation.
     - Construct exact canonical Message, Request, and Response objects directly
