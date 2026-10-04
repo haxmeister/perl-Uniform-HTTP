@@ -30,6 +30,9 @@ $message->body
 $message->has_buffered_body
 $message->is_complete
 $message->is_mutable
+$message->commit
+$message->mark_incomplete
+$message->mark_complete
 $message->headers_are_lossless
 ```
 
@@ -43,8 +46,16 @@ $message->remove_header($name)
 $message->body($bytes)
 ```
 
-Every successful mutator returns the receiving message. An adapter that reports
-false from `is_mutable()` must throw when any mutator is attempted.
+Every successful metadata mutator returns the receiving message. An adapter
+that reports false from `is_mutable()` must throw when a metadata mutator is
+attempted.
+
+`commit()` makes message metadata immutable and is idempotent. It does not
+serialize, send, or otherwise perform I/O.
+
+`mark_incomplete()` and `mark_complete()` change only the completeness state.
+They remain valid after commitment so a protocol implementation can expose an
+immutable header block while an incremental body is still open.
 
 ## Request methods
 
@@ -53,6 +64,8 @@ A request additionally provides:
 ```perl
 $request->method
 $request->target
+$request->scheme
+$request->authority
 $request->target_is_exact
 ```
 
@@ -61,6 +74,8 @@ A mutable request provides:
 ```perl
 $request->method($method)
 $request->target($target)
+$request->scheme($scheme)
+$request->authority($authority)
 ```
 
 `method()` is the case-sensitive HTTP method token.
@@ -68,6 +83,11 @@ $request->target($target)
 `target()` is the request-target byte string used by HTTP semantics. It is not
 a URI object. Origin-form, absolute-form, authority-form, and asterisk-form are
 all representable.
+
+`scheme()` and `authority()` return optional request metadata. They are kept
+separate from ordinary fields because HTTP/2 and HTTP/3 carry them as
+pseudo-fields, while HTTP/1 may obtain the same semantics from request-target or
+routing context. Uniform never infers either value.
 
 `target_is_exact()` is true only when `target()` is the exact source value. An
 adapter that reconstructs the target from path, query, host, scheme, or routing
@@ -156,10 +176,11 @@ Calling `body()` must never implicitly:
 
 Incremental body transfer belongs to the surrounding transport or transaction.
 
-Canonical messages are complete detached values. For them, `is_complete()` is
-true even when the body argument was omitted. An adapter may return false while
-a native message is still being assembled, or `undef` when completeness cannot
-be determined.
+Canonical messages begin complete even when the body argument was omitted.
+A protocol implementation can call `mark_incomplete()` when an incremental
+body is open and `mark_complete()` at the message boundary. An adapter may
+return `undef` from `is_complete()` when its native environment cannot
+determine completeness.
 
 ## Byte contract
 
@@ -178,9 +199,11 @@ grammar, or apply content codings.
 
 ```perl
 my $request = Uniform::HTTP::Request->new(
-    method  => 'POST',
-    target  => '/items?draft=1',
-    version => '1.1',
+    method    => 'POST',
+    target    => '/items?draft=1',
+    scheme    => 'https',
+    authority => 'example.com',
+    version   => '1.1',
     headers => [
         [ 'Content-Type', 'application/json' ],
         [ 'X-Trace',      'one' ],
@@ -198,9 +221,10 @@ my $response = Uniform::HTTP::Response->new(
 );
 ```
 
-Requests require `method` and `target`. Responses require `status`. `version`,
-`reason`, `headers`, and `body` are optional where applicable. No protocol
-version, reason phrase, or response status is guessed.
+Requests require `method` and `target`. Requests may also provide `scheme`
+and `authority`. Responses require `status`. `version`, `reason`,
+`headers`, and `body` are optional where applicable. No scheme, authority,
+protocol version, reason phrase, or response status is guessed.
 
 The `headers` argument is an array reference of two-element name/value array
 references. A hash is intentionally not accepted because it cannot represent
@@ -210,8 +234,8 @@ Canonical objects report:
 
 | Capability | Result |
 | --- | --- |
-| `is_complete()` | true |
-| `is_mutable()` | true |
+| `is_complete()` | true until explicitly marked incomplete |
+| `is_mutable()` | true until committed |
 | `headers_are_lossless()` | true |
 | request `target_is_exact()` | true |
 
