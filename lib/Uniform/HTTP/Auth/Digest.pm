@@ -8,7 +8,7 @@ use Digest::SHA ();
 use Encode qw(encode);
 use Unicode::Normalize qw(NFC);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 my %ALGORITHM = map { $_ => 1 } qw(
     md5 md5-sess
