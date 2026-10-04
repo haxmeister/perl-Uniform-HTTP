@@ -8,7 +8,7 @@ use Uniform::HTTP::Message ();
 use Uniform::HTTP::Request ();
 use Uniform::HTTP::Response ();
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 use constant ABI_VERSION => 1;
 
@@ -223,82 +223,65 @@ __END__
 
 =head1 NAME
 
-Uniform::HTTP::FastPath - Optional bulk access for native HTTP engines
+Uniform::HTTP::FastPath - Optional fast path for native HTTP engines
 
 =head1 SYNOPSIS
 
     use Uniform::HTTP::FastPath;
 
-    my $view = Uniform::HTTP::FastPath::view($request);
-
-    if ($view->[Uniform::HTTP::FastPath::SLOT_ABI()]
-            == Uniform::HTTP::FastPath::ABI_VERSION()) {
-        # Pass the fixed-layout view to native code.
+    if (Uniform::HTTP::FastPath::can_view($request)) {
+        my $view = Uniform::HTTP::FastPath::view($request);
+        $native_engine->send_uniform_fast($view);
     }
 
 =head1 DESCRIPTION
 
-Uniform::HTTP::FastPath is an optional implementer API for code that already
-uses canonical Uniform HTTP messages but needs to avoid many Perl method calls.
+Uniform::HTTP::FastPath is an optional interface for native-backed HTTP
+implementations.
 
-It does not parse HTTP, serialize HTTP, perform I/O, or expose a C pointer.
-Normal application code should continue to use the Request and Response APIs.
+It lets an engine inspect a canonical Uniform message in one operation instead
+of making many Perl method calls. It can also build a canonical Request or
+Response from values that the engine has already validated.
 
-The fast path has two jobs:
+Normal application code should use L<Uniform::HTTP::Request> and
+L<Uniform::HTTP::Response>. Adapters and subclasses use the normal portable
+Uniform API.
 
-=over 4
+FastPath does not parse HTTP, serialize HTTP, perform I/O, or choose an HTTP
+version.
 
-=item * expose a canonical message in one fixed-layout view
+=head1 ABI
 
-=item * construct a canonical Request or Response from data already validated
-by a trusted protocol engine
+The current fast-path ABI is version 1:
 
-=back
+    Uniform::HTTP::FastPath::ABI_VERSION()   # 1
 
-The ABI is explicitly versioned. A consumer that cannot use the supported ABI
-must fall back to the normal Uniform methods.
-
-=head1 ABI VERSION
-
-=head2 ABI_VERSION
-
-Returns the current fast-path ABI version. Version 1 is the only supported
-version in this release.
-
-The ABI version covers slot meanings, flag meanings, and ownership rules.
-Incompatible changes require a new ABI version.
-
-=head1 MESSAGE VIEW
+A native consumer must check the ABI version before interpreting a view.
+Incompatible layouts will use a new ABI version.
 
 =head2 can_view
 
-    if (Uniform::HTTP::FastPath::can_view($message)) {
-        ...
-    }
+    my $ok = Uniform::HTTP::FastPath::can_view($message);
 
-Returns true only for exact canonical C<Uniform::HTTP::Message>,
-C<Uniform::HTTP::Request>, and C<Uniform::HTTP::Response> objects.
+Returns true only for exact canonical objects:
 
-Subclasses and adapters deliberately return false. Their storage or overridden
-semantics may differ from the canonical classes. Consumers must use the normal
-portable API for them.
+    Uniform::HTTP::Message
+    Uniform::HTTP::Request
+    Uniform::HTTP::Response
+
+Subclasses and adapters return false because their storage or behavior may be
+different.
 
 =head2 view
 
     my $view = Uniform::HTTP::FastPath::view($message);
-    my $view = Uniform::HTTP::FastPath::view($message, 1);
 
-Returns an array reference using the requested ABI.
-
-The operation performs no HTTP validation and no network or framework work.
-It reads the already-valid canonical object directly.
-
-ABI 1 has these slots:
+Returns an array reference with this ABI 1 layout:
 
     0   ABI version
     1   message kind
     2   flags
-    3   version
+    3   HTTP version
     4   request method
     5   request target
     6   request scheme
@@ -310,9 +293,8 @@ ABI 1 has these slots:
     12  trailers
     13  buffered body
 
-The C<SLOT_*> constants provide these indexes.
-
-Unused request or response metadata slots contain C<undef>.
+Use the C<SLOT_*> constants instead of hardcoded indexes when writing Perl
+code.
 
 Message kinds are:
 
@@ -320,7 +302,12 @@ Message kinds are:
     KIND_REQUEST
     KIND_RESPONSE
 
-The flags are:
+Request-only slots are C<undef> for responses. Response-only slots are C<undef>
+for requests.
+
+=head1 FLAGS
+
+C<SLOT_FLAGS> can contain:
 
     FLAG_HAS_BUFFERED_BODY
     FLAG_COMPLETE
@@ -332,23 +319,17 @@ The flags are:
     FLAG_TRAILERS_LOSSLESS
     FLAG_TARGET_EXACT
 
-The header and trailer slots are the canonical ordered arrays containing
+These describe the canonical object at the time C<view()> is called.
+
+=head1 HEADERS AND TRAILERS
+
+The header and trailer slots contain the canonical ordered arrays of
 C<[ name, value ]> pairs.
 
-=head1 BORROWED DATA
+These arrays are borrowed, not copied. A consumer must not modify them, and the
+source message must not be changed while native code is using the view.
 
-A view is intended for immediate consumption.
-
-Header and trailer array references are borrowed from the canonical object.
-The consumer must not modify them. The source message must not be mutated while
-native code is consuming the view.
-
-A consumer must not retain a view as a live representation of a mutable
-message. Obtain a new view after message mutation.
-
-The returned view itself keeps referenced Perl values alive for as long as the
-view exists. These lifetime rules are about semantic freshness and ownership,
-not dangling Perl references.
+Take a new view after changing a message.
 
 =head1 TRUSTED CONSTRUCTION
 
@@ -357,74 +338,46 @@ not dangling Perl references.
     my $request =
         Uniform::HTTP::FastPath::request_from_validated($view);
 
-Constructs a canonical C<Uniform::HTTP::Request> directly from an ABI 1 request
-view.
-
 =head2 response_from_validated
 
     my $response =
         Uniform::HTTP::FastPath::response_from_validated($view);
 
-Constructs a canonical C<Uniform::HTTP::Response> directly from an ABI 1
-response view.
+These functions are for protocol engines that have already validated the
+message values.
 
-These constructors are for protocol engines that have already validated the
-HTTP values. They deliberately skip the normal token, byte-string, field-value,
-status-range, and request-target validation performed by public constructors
-and setters.
+They skip the normal per-field HTTP validation and adopt the header and trailer
+arrays from the view. This avoids repeating work already done by a trusted
+parser.
 
-They still check the ABI structure and canonical state flags so malformed
-bridge data cannot silently create an internally contradictory object.
+The caller must guarantee that all supplied values satisfy the normal
+Uniform::HTTP rules. After successful construction, the caller must not modify
+the adopted header or trailer arrays.
 
-Calling a trusted constructor is a promise that every supplied value already
-satisfies the normal Uniform::HTTP invariants.
+Use the normal Request or Response constructor for application input, wire data
+that has not been fully validated, or data from an untrusted adapter.
 
-=head1 ADOPTED STORAGE
+=head1 FALLBACK
 
-Trusted construction adopts the header and trailer array references from the
-view instead of copying every field.
+FastPath is never required.
 
-After successful construction, the caller must not mutate those arrays or
-their field pairs. The new Uniform object owns their semantic contents.
-
-If shared mutable storage is not acceptable, use the normal public constructor,
-which validates and copies field storage.
-
-=head1 NATIVE ENGINE PATTERN
-
-A native-backed HTTP implementation can use the fast path without making it a
-requirement:
-
-    if (Uniform::HTTP::FastPath::can_view($response)) {
-        my $view = Uniform::HTTP::FastPath::view($response);
-        $native_engine->send_uniform_fast($view);
-    }
-    else {
-        $native_engine->send_uniform_portable($response);
-    }
-
-The native side checks C<SLOT_ABI> before interpreting the layout.
-
-A parser can perform the reverse operation by assembling an ABI 1 view from
-values it has already validated and calling the appropriate trusted
-constructor.
-
-This keeps protocol parsing and serialization outside Uniform::HTTP while
-providing a performance recovery path for XS-backed implementations.
+A native implementation should use C<can_view()> and fall back to the normal
+Uniform methods when it returns false. This keeps adapters, subclasses, and
+pure-Perl implementations fully portable.
 
 =head1 SECURITY
 
-The trusted constructors are intentionally unsafe for unvalidated input.
+Trusted construction deliberately bypasses normal semantic validation.
 
-Do not pass user input, wire bytes, adapter output, or partially validated
-values directly to them. Use the normal Request or Response constructor unless
-the caller is the component that already enforced the same invariants.
+Do not use C<request_from_validated()> or C<response_from_validated()> as
+general-purpose constructors. They are an interface between Uniform and a
+component that has already enforced the same invariants.
 
-The fast path does not weaken validation in the normal public API.
+The ordinary public constructors remain fully validated.
 
 =head1 VERSION
 
-Fast-path ABI version 1. Module version 0.04.
+Module version 0.05. Fast-path ABI version 1.
 
 =head1 AUTHOR
 
