@@ -179,9 +179,9 @@ sub is_mutable {
     return $self->{mutable} ? 1 : 0;
 }
 
-sub commit {
+sub freeze {
     my ($self, @args) = @_;
-    croak 'commit() does not accept arguments' if @args;
+    croak 'freeze() does not accept arguments' if @args;
     $self->{mutable} = 0;
     return $self;
 }
@@ -303,10 +303,12 @@ Uniform::HTTP::Message is the shared semantic base for requests and responses.
 It preserves duplicate fields, field order, and original field-name spelling.
 It performs no parsing, serialization, encoding, or I/O.
 
-Canonical messages begin mutable, complete, and lossless. Protocol engines and
-adapters may commit message metadata and may mark a message incomplete while an
-incremental body is still arriving. These state changes do not perform I/O.
-Adapters may implement the same contract without subclassing.
+Canonical messages begin mutable, complete, and lossless. The portable Uniform
+contract exposes that state through C<is_mutable> and C<is_complete>. Canonical
+objects additionally provide C<freeze>, C<mark_incomplete>, and
+C<mark_complete> as local state-management helpers. Adapters may implement the
+portable contract without providing those helpers and need not subclass a
+Uniform class.
 
 =head1 CONSTRUCTOR
 
@@ -370,28 +372,36 @@ buffer.
 =head2 is_complete
 
 Returns the current message-completeness state. Canonical messages begin
-complete. C<mark_incomplete> and C<mark_complete> allow a protocol engine or
-adapter to track incremental message assembly without owning the transport.
+complete. An adapter may return true, false, or C<undef> when the native
+environment cannot determine completeness.
 
 =head2 is_mutable
 
-Returns whether message metadata can still be changed. Canonical messages begin
-mutable. C<commit> makes metadata immutable.
+Returns whether represented message values can still be changed. Canonical
+messages begin mutable. An adapter reports the mutability of its native or
+snapshotted representation.
 
-=head2 commit
+=head1 CANONICAL LIFECYCLE HELPERS
 
-Marks message metadata immutable and returns the message. It is idempotent and
-does not send, serialize, or otherwise perform I/O.
+These helpers belong to the canonical Uniform message classes. They are not
+required methods for framework or protocol adapters.
+
+=head2 freeze
+
+Makes the represented message values immutable and returns the message. It is
+idempotent and does not send, serialize, commit a framework response, or
+otherwise perform I/O. Setters for headers, body, version, request metadata,
+and response metadata all throw after the object is frozen.
 
 =head2 mark_incomplete
 
-Marks the message incomplete and returns it. This is useful when a complete
-header block has been received but an incremental body remains open.
+Marks the canonical message incomplete and returns it. This is useful when a
+complete header block is available but an incremental body remains open.
 
 =head2 mark_complete
 
-Marks the message complete and returns it. It does not imply that a body was
-buffered.
+Marks the canonical message complete and returns it. It remains available after
+C<freeze> and does not imply that a body was buffered.
 
 =head2 headers_are_lossless
 
@@ -407,10 +417,11 @@ and bytes from 0x80 through 0xff.
 
 =head1 MUTATION
 
-All successful metadata mutators return the receiving object. Canonical
-messages begin mutable. After C<commit>, metadata mutators throw. Completeness
-is independent of metadata mutability so a committed streaming message can move
-from incomplete to complete as its body finishes.
+All successful portable mutators return the receiving object. Canonical
+messages begin mutable. After C<freeze>, every represented message-value
+mutator, including C<body($bytes)>, throws. Completeness state is independent
+of value mutability, so a frozen canonical streaming message can still move
+from incomplete to complete as its body finishes externally.
 
 =head1 AUTHOR
 
