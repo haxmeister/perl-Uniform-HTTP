@@ -1,4 +1,4 @@
-# Uniform::HTTP Adapter Guide 0.02
+# Uniform::HTTP Adapter Guide 0.03
 
 ## Distribution boundary
 
