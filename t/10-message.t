@@ -32,17 +32,29 @@ ok $message->is_mutable, 'canonical message begins mutable';
 
 my $stateful = Uniform::HTTP::Message->new(
     headers => [ [ 'X-State', 'before' ] ],
+    body    => 'before',
 );
 is $stateful->mark_incomplete, $stateful,
     'mark_incomplete is chainable';
 ok !$stateful->is_complete, 'message can represent an open incremental body';
-is $stateful->commit, $stateful, 'commit is chainable';
-ok !$stateful->is_mutable, 'committed message is immutable';
+is $stateful->freeze, $stateful, 'freeze is chainable';
+is $stateful->freeze, $stateful, 'freeze is idempotent';
+ok !$stateful->is_mutable, 'frozen message is immutable';
+
 eval { $stateful->header('X-State', 'after') };
-like $@, qr/message is immutable/, 'commit prevents metadata mutation';
+like $@, qr/message is immutable/, 'freeze prevents header mutation';
+is $stateful->header('X-State'), 'before', 'failed header mutation changes nothing';
+
+eval { $stateful->body('after') };
+like $@, qr/message is immutable/, 'freeze prevents buffered body replacement';
+is $stateful->body, 'before', 'failed body mutation changes nothing';
+
+eval { $stateful->version('2') };
+like $@, qr/message is immutable/, 'freeze prevents version mutation';
+
 is $stateful->mark_complete, $stateful,
-    'mark_complete remains available after commitment';
-ok $stateful->is_complete, 'committed message can become complete';
+    'mark_complete remains available after freeze';
+ok $stateful->is_complete, 'frozen message can become complete';
 
 is $message->header('Set-Cookie', 'c=3'), $message,
     'header setter is chainable';
