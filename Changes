@@ -1,5 +1,12 @@
 Revision history for Uniform-HTTP
 
+0.03  Not yet released
+    - Add optional request scheme and authority metadata without inference.
+    - Add transport-neutral message commitment and complete/incomplete state so
+      live protocol adapters can report streaming message state truthfully.
+    - Keep message state changes free of parsing, serialization, I/O, event-loop,
+      transaction, or stream ownership.
+
 0.02  2026-09-13
     - Rename the distribution from Uniform-HTTP-Auth to Uniform-HTTP.
     - Preserve the Uniform::HTTP::Auth module name and its 0.01 public API.
