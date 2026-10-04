@@ -12,19 +12,24 @@ my $response = Uniform::HTTP::Response->new(status => 200);
 for my $method (qw(
     version header header_values header_count header_name header_value
     add_header remove_header body has_buffered_body is_complete is_mutable
-    commit mark_incomplete mark_complete headers_are_lossless
+    headers_are_lossless
 )) {
-    ok $request->can($method), "request provides $method";
-    ok $response->can($method), "response provides $method";
+    ok $request->can($method), "request provides portable $method";
+    ok $response->can($method), "response provides portable $method";
 }
 
 for my $method (qw(method target scheme authority target_is_exact)) {
-    ok $request->can($method), "request provides $method";
+    ok $request->can($method), "request provides portable $method";
+}
+
+for my $method (qw(freeze mark_incomplete mark_complete)) {
+    ok $request->can($method), "canonical request provides helper $method";
+    ok $response->can($method), "canonical response provides helper $method";
 }
 
 for my $method (qw(
     send write respond receive parse serialize socket connection transaction
-    stream pause resume drain cancel retry redirect
+    stream pause resume drain cancel retry redirect commit
 )) {
     ok !$request->can($method), "request does not own $method";
     ok !$response->can($method), "response does not own $method";
