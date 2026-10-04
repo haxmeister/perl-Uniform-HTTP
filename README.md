@@ -1,84 +1,187 @@
 # Uniform::HTTP
 
-Framework-neutral HTTP messages and authentication for Perl, independent of
-transports, event loops, and web frameworks.
+[![CPAN version](https://badge.fury.io/pl/Uniform-HTTP.svg)](https://metacpan.org/dist/Uniform-HTTP)
+[![CPANTS Kwalitee](https://cpants.cpanauthors.org/dist/Uniform-HTTP.svg)](https://cpants.cpanauthors.org/dist/Uniform-HTTP)
+[![CI](https://github.com/haxmeister/perl-Uniform-HTTP/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/haxmeister/perl-Uniform-HTTP/actions/workflows/test.yml)
+[![License](https://img.shields.io/cpan/l/Uniform-HTTP.svg)](https://github.com/haxmeister/perl-Uniform-HTTP/blob/main/LICENSE)
+[![Perl](https://img.shields.io/badge/perl-5.16%2B-blue.svg)](https://www.perl.org/)
 
-`Uniform::HTTP` provides a small semantic layer that HTTP clients, servers,
-frameworks, middleware, and applications can share without adopting one
-another's object model.
+Uniform::HTTP provides small, framework-neutral HTTP objects for Perl.
 
-## Modules
+It gives different HTTP libraries a common way to represent:
 
-- `Uniform::HTTP::Message` represents common message state.
-- `Uniform::HTTP::Request` adds method, target, scheme, and authority semantics.
-- `Uniform::HTTP::Response` adds status and optional reason semantics.
-- `Uniform::HTTP::Auth` implements Basic, Bearer, and Digest authentication.
+- requests
+- responses
+- headers
+- buffered bodies
+- HTTP authentication
 
-The canonical message classes are mutable, lossless, detached objects.
-Framework adapters are separate distributions and implement the same portable
-contract.
+It does **not** open sockets, run an event loop, parse HTTP from the network, or
+send requests. Those jobs stay with the HTTP client, server, or framework using
+it.
 
-## Request and response objects
+The useful mental model is:
+
+```text
+HTTP client / server / framework
+            |
+      Uniform::HTTP
+            |
+   request / response data
+```
+
+This makes it possible for unrelated HTTP implementations to exchange the same
+kind of request and response objects without depending on each other's object
+model.
+
+## Installation
+
+From CPAN:
+
+```text
+cpanm Uniform::HTTP
+```
+
+Uniform::HTTP requires Perl 5.16 or newer.
+
+## Start here
+
+Most application code will use `Uniform::HTTP::Request` and
+`Uniform::HTTP::Response`.
+
+Create a request:
 
 ```perl
 use Uniform::HTTP::Request;
-use Uniform::HTTP::Response;
 
 my $request = Uniform::HTTP::Request->new(
-    method    => 'POST',
-    target    => '/items?draft=1',
+    method    => 'GET',
+    target    => '/users?id=42',
     scheme    => 'https',
     authority => 'example.com',
-    version   => '1.1',
-    headers => [
-        [ 'Content-Type', 'application/json' ],
-        [ 'X-Trace',      'one' ],
-        [ 'X-Trace',      'two' ],
+    headers   => [
+        [ 'Accept', 'application/json' ],
     ],
-    body => '{"name":"example"}',
 );
 
-my $response = Uniform::HTTP::Response->new(
-    status  => 201,
-    reason  => 'Created',
-    headers => [ [ 'Content-Type', 'application/json' ] ],
-    body    => '{}',
-);
+say $request->method;               # GET
+say $request->target;               # /users?id=42
+say $request->header('Accept');     # application/json
 ```
 
-Headers are an ordered list of field occurrences. Duplicate fields and
-original field-name spelling are preserved. Lookup is ASCII case-insensitive,
-and repeated values are never silently comma-joined.
+Create a response:
 
-Bodies and header values are bytes. A message never consumes an input stream,
-filehandle, callback, PSGI input object, or PAGI body source merely because
-`body()` was called.
+```perl
+use Uniform::HTTP::Response;
 
-`is_complete()` and `is_mutable()` are part of the portable contract so
-adapters can report native message state truthfully. Adapters are not required
-to provide methods that change those states.
+my $response = Uniform::HTTP::Response->new(
+    status  => 200,
+    headers => [
+        [ 'Content-Type', 'text/plain' ],
+    ],
+    body => "hello\n",
+);
 
-Canonical Uniform objects additionally provide `freeze()`,
-`mark_incomplete()`, and `mark_complete()` as local helpers. `freeze()`
-makes every represented message value immutable, including a buffered body,
-without sending or committing anything in a framework.
+say $response->status;              # 200
+say $response->body;                # hello
+```
 
-## HTTP/2 and HTTP/3 request metadata
+These are plain detached HTTP message objects. Creating one does not perform
+network I/O.
 
-`scheme()` and `authority()` are optional request metadata. Uniform never
-infers them from Host, a request target, or the transport.
+## Headers
 
-HTTP/2 and HTTP/3 adapters normally expose exact `:path` bytes through
-`target()`. Ordinary CONNECT is the special case because it has
-`:authority` but no `:path`; adapters expose the exact `:authority` bytes
-as the authority-form target and may still report `target_is_exact()` as
-true.
+Headers are stored as an ordered list instead of a hash.
 
-Authority handling is deliberately minimal and byte-oriented. Uniform is not a
-URI parser and does not impose protocol-specific host, port, userinfo, IP
-literal, or percent-escape rules.
+That matters because HTTP can contain repeated fields:
+
+```perl
+my $response = Uniform::HTTP::Response->new(
+    status => 200,
+    headers => [
+        [ 'Set-Cookie', 'a=1' ],
+        [ 'Set-Cookie', 'b=2' ],
+    ],
+);
+
+my $first = $response->header('Set-Cookie');
+
+my $all = $response->header_values('Set-Cookie');
+# [ 'a=1', 'b=2' ]
+```
+
+Uniform::HTTP preserves:
+
+- duplicate header fields
+- header order
+- original field-name spelling
+
+Header lookup is case-insensitive.
+
+## Bodies
+
+`body()` represents a body that is already buffered in memory.
+
+```perl
+my $body = $response->body;
+```
+
+Uniform::HTTP never reads a socket, filehandle, callback, or streaming body
+source just because `body()` was called.
+
+Use:
+
+```perl
+$response->has_buffered_body;
+```
+
+to tell whether a complete buffered body is available.
+
+Streaming belongs to the HTTP implementation around the Uniform object.
+
+## Changing a message
+
+Canonical Uniform objects are mutable by default:
+
+```perl
+$request->header('Accept', 'text/html');
+$response->status(404);
+```
+
+They can be frozen when no more message values should change:
+
+```perl
+$response->freeze;
+```
+
+After `freeze()`, setters throw an exception.
+
+`is_mutable()` reports whether the current representation can still be
+changed.
+
+`is_complete()` reports whether the whole message is known to be complete.
+Adapters may return `undef` when their framework cannot know yet.
+
+## HTTP/2 and HTTP/3
+
+Uniform::HTTP does not implement HTTP/2 or HTTP/3. It only represents the HTTP
+message semantics those protocols carry.
+
+Requests have separate `scheme()`, `authority()`, and `target()` values so
+HTTP/1, HTTP/2, and HTTP/3 implementations can map their native request data
+without losing meaning.
+
+For ordinary HTTP/2 or HTTP/3 CONNECT, the exact `:authority` value is used as
+the authority-form request target.
+
+Protocol-specific validation and wire framing remain the job of the HTTP
+implementation.
 
 ## Authentication
+
+`Uniform::HTTP::Auth` prepares Basic, Bearer, and Digest authentication values.
+
+A normal username/password example:
 
 ```perl
 use Uniform::HTTP::Auth;
@@ -94,79 +197,87 @@ my $auth = Uniform::HTTP::Auth->new(
 my $result = $auth->prepare_authentication(
     challenge_headers => [
         'Digest realm="Members", nonce="abc", qop="auth", algorithm=SHA-256',
-        'Basic realm="Members"',
     ],
-    request => $request,
+    method         => 'GET',
+    request_target => '/private',
 );
 
-my $authorization_value = $result->{value};
+my $value = $result->{value};
 ```
 
-`prepare_authentication()` also accepts explicit `method`,
-`request_target`, and `entity_body` values, preserving the API released in
-`Uniform-HTTP-Auth` 0.01. It performs no network I/O and does not retry or send
-the request.
+`$value` is the complete authentication field value. The surrounding HTTP
+implementation decides whether to put it in `Authorization` or
+`Proxy-Authorization`, and whether to retry the request.
 
-Supported authentication schemes are:
+Authentication performs no network I/O.
 
-- Basic (RFC 7617)
-- Bearer (RFC 6750)
-- Digest (RFC 7616), including MD5, SHA-256, SHA-512/256, session variants,
-  `qop=auth`, `qop=auth-int`, UTF-8, `userhash`, and nonce-count state
+Supported schemes are:
 
-## Ownership boundary
+- Basic
+- Bearer
+- Digest
 
-Uniform owns:
+Most applications should use `Uniform::HTTP::Auth` directly. The
+`Basic`, `Bearer`, and `Digest` submodules are also available for code that
+only wants the lower-level calculations.
 
-- lossless HTTP message semantics
-- exact request targets when supplied by the source
-- optional request scheme and authority semantics
-- buffered body state
-- capability reporting for adapters
-- authentication challenge parsing and scheme selection
-- Basic, Bearer, and Digest value construction
+## What Uniform::HTTP does not do
 
-The calling HTTP implementation owns:
+Uniform::HTTP deliberately does not own:
 
-- parsing and serializing wire protocols
-- sockets, TLS, connections, and transaction state
-- incremental request and response body transfer
-- native message lifecycle and framework response commitment
-- cancellation, backpressure, retry, redirect, and replay policy
-- HTTP/1 framing, HTTP/2 streams, and HTTP/3 streams
+- sockets or TLS
+- connections
+- HTTP parsing or serialization
+- HTTP/1 framing
+- HTTP/2 or HTTP/3 streams
+- event loops
+- request retries
+- redirects
+- streaming I/O
+- framework response lifecycle
+
+This is what keeps the objects usable across different HTTP implementations.
+
+## Modules
+
+The distribution contains:
+
+- `Uniform::HTTP::Message` - shared message behavior
+- `Uniform::HTTP::Request` - HTTP requests
+- `Uniform::HTTP::Response` - HTTP responses
+- `Uniform::HTTP::Auth` - HTTP authentication
+- `Uniform::HTTP::Auth::Basic`
+- `Uniform::HTTP::Auth::Bearer`
+- `Uniform::HTTP::Auth::Digest`
 
 ## Adapters
 
-Adapters are explicit and separately installed. A core application never
-runtime-probes for Mojo, PSGI, PAGI, Dancer2, Catalyst, Linux::Event, or
-`HTTP::Message`.
+A framework can expose its native request or response through the Uniform HTTP
+contract without subclassing the canonical classes.
 
-Adapters report mutability and completeness through the portable capability
-methods. They do not need to implement the canonical `freeze()`,
-`mark_incomplete()`, or `mark_complete()` helpers.
+Adapters should be separate distributions. Uniform::HTTP itself does not depend
+on Mojolicious, PSGI, PAGI, Linux::Event, or another HTTP stack.
 
-See `docs/MESSAGE-SPEC.md` for the normative message contract and
-`docs/ADAPTERS.md` for adapter requirements.
+Most users do not need to know the adapter rules. They are documented for HTTP
+library authors in:
 
-## Installation
-
-```text
-cpanm Uniform::HTTP
-```
-
-For a checkout:
-
-```text
-perl Makefile.PL
-make
-make test
-```
+- `docs/MESSAGE-SPEC.md`
+- `docs/ADAPTERS.md`
+- `docs/AUTH-SPEC.md`
 
 ## Migration from Uniform-HTTP-Auth
 
-`Uniform::HTTP::Auth` keeps its module name and public 0.01 API. Beginning with
-version 0.02 it is released as part of `Uniform-HTTP`. Code that loads or
-declares a dependency on `Uniform::HTTP::Auth` does not need to change.
+`Uniform::HTTP::Auth` was originally released in the
+`Uniform-HTTP-Auth` distribution.
+
+Beginning with Uniform-HTTP 0.02, the same module is part of `Uniform-HTTP`.
+Existing code using:
+
+```perl
+use Uniform::HTTP::Auth;
+```
+
+does not need to change.
 
 ## License
 
