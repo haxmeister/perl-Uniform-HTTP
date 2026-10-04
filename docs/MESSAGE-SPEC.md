@@ -1,6 +1,6 @@
-# Uniform::HTTP Message Contract 0.04
+# Uniform::HTTP Message Contract 0.05
 
-Status: message contract for Uniform-HTTP 0.04.
+Status: message contract for Uniform-HTTP 0.05.
 
 ## Purpose
 
