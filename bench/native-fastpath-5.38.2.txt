@@ -1,0 +1,19 @@
+Perl 5.38.2; threads=define; x86_64-linux-gnu-thread-multi
+Median of 3 rounds, at least 0.25 seconds per sample. us/op.
+Fresh native input -> full object, including destruction. Inspection uses
+the same C checksum over all metadata, fields, trailers, and body.
+No parser, I/O, or network throughput is measured.
+
+kind      headers operation           ordinary perl_fastpath        native
+request         0 construction          43.927         5.366         1.581
+request         0 inspection             8.294         2.738         0.494
+request         4 construction          45.761         6.584         2.255
+request         4 inspection            27.022         3.912         1.002
+request        32 construction         186.854        18.691        10.897
+request        32 inspection           115.785         6.305         2.591
+response        0 construction          37.574         8.161         1.831
+response        0 inspection             6.458         2.508         0.421
+response        4 construction          28.109         5.012         1.535
+response        4 inspection            12.537         2.306         0.493
+response       32 construction          87.337         9.401         5.234
+response       32 inspection            56.232         3.076         1.271

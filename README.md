@@ -32,7 +32,8 @@ From CPAN:
 cpanm Uniform::HTTP
 ```
 
-Uniform::HTTP requires Perl 5.16 or newer.
+Uniform::HTTP requires Perl 5.16 or newer. It is a pure-Perl distribution;
+no C compiler is required to install it.
 
 ## Start here
 
@@ -280,7 +281,13 @@ already validated.
 Normal application code does not need it. Adapters and subclasses continue to
 use the portable message API.
 
-See `Uniform::HTTP::FastPath` for the ABI and ownership rules.
+XS consumers can also compile the optional `uniform_http_fastpath.h` header
+as part of their own distribution. It constructs and inspects the same canonical
+objects directly. Uniform::HTTP itself still compiles nothing, and its Perl API
+remains the public object interface.
+
+See `Uniform::HTTP::FastPath` and `docs/NATIVE-FASTPATH.md` for the version checks,
+trusted-input boundary, and ownership rules.
 
 ## What Uniform::HTTP does not do
 

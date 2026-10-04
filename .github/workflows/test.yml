@@ -12,6 +12,7 @@ jobs:
       matrix:
         perl:
           - '5.16'
+          - '5.38'
           - 'latest'
 
     steps:
@@ -40,3 +41,11 @@ jobs:
       - name: Check POD syntax
         run: |
           find lib -name '*.pm' -print0 | xargs -0 -n1 podchecker
+
+      - name: Prove compiler-free installation
+        run: perl author/check-pure-perl.pl
+
+      - name: Native consumer conformance
+        run: |
+          perl author/native/build.pl
+          prove author/native.t

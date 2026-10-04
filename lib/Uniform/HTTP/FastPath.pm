@@ -12,6 +12,29 @@ our $VERSION = '0.05';
 
 use constant ABI_VERSION => 1;
 
+# The native header is compiled by consumers, never by this distribution.
+use constant NATIVE_ABI_VERSION => 1;
+use constant _NATIVE_LAYOUT_VERSION => 1;
+
+sub native_compatible {
+    return 0 unless @_ == 2;
+    my ($abi, $layout) = @_;
+    return 0 unless defined($abi) && !ref($abi) && $abi =~ /\A[0-9]+\z/
+        && defined($layout) && !ref($layout) && $layout =~ /\A[0-9]+\z/;
+    return $abi == NATIVE_ABI_VERSION && $layout == _NATIVE_LAYOUT_VERSION
+        ? 1 : 0;
+}
+
+my $native_include_dir = do {
+    require File::Basename;
+    require File::Spec;
+    File::Spec->rel2abs(File::Spec->catdir(
+        File::Basename::dirname(__FILE__), 'FastPath',
+    ));
+};
+
+sub native_include_dir { return $native_include_dir }
+
 use constant KIND_MESSAGE  => 0;
 use constant KIND_REQUEST  => 1;
 use constant KIND_RESPONSE => 2;
@@ -356,6 +379,37 @@ the adopted header or trailer arrays.
 
 Use the normal Request or Response constructor for application input, wire data
 that has not been fully validated, or data from an untrusted adapter.
+
+=head1 NATIVE HEADER
+
+Uniform::HTTP is pure Perl. No compiler is required to install it.
+
+XS consumers can compile F<uniform_http_fastpath.h> as part of their own
+distribution. The header constructs exact canonical Message, Request, and
+Response objects from validated native byte spans. It can also inspect a
+canonical object without allocating a Perl view or making per-field Perl calls.
+
+Find the installed header directory with:
+
+    my $include = Uniform::HTTP::FastPath::native_include_dir();
+
+The native contract has its own version:
+
+    Uniform::HTTP::FastPath::NATIVE_ABI_VERSION()   # 1
+
+Consumers must initialize a per-interpreter handle with C<uhttp_native_init>.
+It checks the compiled header against the installed runtime. The Perl helper
+C<native_compatible(abi, layout)> supports that handshake; consumers do not
+choose or override the header's private storage revision.
+
+Construction copies native input bytes and requires explicit trusted opt-in.
+It does not validate HTTP syntax. Inspection borrows existing values only while
+the source is alive and unchanged. Adapters and subclasses use the portable
+API. No native setter or alternate message class is introduced.
+
+The Perl FastPath ABI, including its array-adoption rules, is unchanged.
+See F<docs/NATIVE-FASTPATH.md> for the C API, ownership rules, examples, and
+author-only conformance tests. Normal applications do not need this interface.
 
 =head1 FALLBACK
 
