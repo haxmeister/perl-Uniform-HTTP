@@ -12,10 +12,14 @@ my $response = Uniform::HTTP::Response->new(status => 200);
 for my $method (qw(
     version header header_values header_count header_name header_value
     add_header remove_header body has_buffered_body is_complete is_mutable
-    headers_are_lossless
+    commit mark_incomplete mark_complete headers_are_lossless
 )) {
     ok $request->can($method), "request provides $method";
     ok $response->can($method), "response provides $method";
+}
+
+for my $method (qw(method target scheme authority target_is_exact)) {
+    ok $request->can($method), "request provides $method";
 }
 
 for my $method (qw(
