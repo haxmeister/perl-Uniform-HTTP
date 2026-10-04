@@ -27,8 +27,22 @@ is $message->header_name(50), undef, 'out-of-range index returns undef';
 ok $message->headers_are_lossless, 'canonical headers are lossless';
 ok $message->has_buffered_body, 'empty body is still a buffered body';
 is $message->body, '', 'empty buffered body is returned';
-ok $message->is_complete, 'canonical message is complete';
-ok $message->is_mutable, 'canonical message is mutable';
+ok $message->is_complete, 'canonical message begins complete';
+ok $message->is_mutable, 'canonical message begins mutable';
+
+my $stateful = Uniform::HTTP::Message->new(
+    headers => [ [ 'X-State', 'before' ] ],
+);
+is $stateful->mark_incomplete, $stateful,
+    'mark_incomplete is chainable';
+ok !$stateful->is_complete, 'message can represent an open incremental body';
+is $stateful->commit, $stateful, 'commit is chainable';
+ok !$stateful->is_mutable, 'committed message is immutable';
+eval { $stateful->header('X-State', 'after') };
+like $@, qr/message is immutable/, 'commit prevents metadata mutation';
+is $stateful->mark_complete, $stateful,
+    'mark_complete remains available after commitment';
+ok $stateful->is_complete, 'committed message can become complete';
 
 is $message->header('Set-Cookie', 'c=3'), $message,
     'header setter is chainable';
