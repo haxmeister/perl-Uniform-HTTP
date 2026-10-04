@@ -123,77 +123,134 @@ Uniform::HTTP::Request - Framework-neutral HTTP request
     use Uniform::HTTP::Request;
 
     my $request = Uniform::HTTP::Request->new(
-        method    => 'POST',
-        target    => '/items?draft=1',
+        method    => 'GET',
+        target    => '/items?id=42',
         scheme    => 'https',
         authority => 'example.com',
-        version   => '1.1',
-        headers   => [ [ 'Content-Type', 'application/json' ] ],
-        body      => '{"name":"example"}',
+        headers   => [
+            [ 'Accept', 'application/json' ],
+        ],
     );
 
 =head1 DESCRIPTION
 
-Uniform::HTTP::Request adds method and request-target semantics to
-L<Uniform::HTTP::Message>. It is a detached message object, not a transaction
-or connection.
+Uniform::HTTP::Request represents HTTP request data without owning a
+connection, transaction, event loop, or transport.
+
+A request always has a method and request target. It may also carry scheme,
+authority, version, headers, and a buffered body.
+
+Creating or changing a request never sends anything.
 
 =head1 CONSTRUCTOR
 
 =head2 new
 
-Requires named C<method> and C<target> arguments. It also accepts optional
-C<scheme> and C<authority> request metadata plus the common C<version>,
-C<headers>, and C<body> arguments. Scheme and authority are never inferred from
-the target.
+    my $request = Uniform::HTTP::Request->new(
+        method => 'POST',
+        target => '/items',
+        body   => $bytes,
+    );
+
+C<method> and C<target> are required.
+
+Optional arguments are:
+
+=over 4
+
+=item * C<scheme>
+
+=item * C<authority>
+
+=item * C<version>
+
+=item * C<headers>
+
+=item * C<body>
+
+=back
 
 =head1 METHODS
 
 =head2 method
 
-Returns the case-sensitive HTTP method token. Passing a token sets it and
-returns the request.
+    my $method = $request->method;
+
+Returns the HTTP method.
+
+Set it with:
+
+    $request->method('POST');
 
 =head2 target
 
-Returns the semantic HTTP request-target as bytes, not as a URI object.
-Passing a target sets it and returns the request.
+    my $target = $request->target;
 
-For HTTP/2 and HTTP/3 requests that carry C<:path>, an adapter should expose
-the exact C<:path> bytes here when no reconstruction is required. Ordinary
-CONNECT is the special case: it has no C<:path>, so an adapter exposes the
-exact C<:authority> bytes as the authority-form target. That mapping remains
-exact because the bytes are copied without parsing or normalization.
+Returns the HTTP request target as bytes.
+
+Examples include:
+
+    /
+    /items?id=42
+    *
+    example.com:443
+
+Set it with:
+
+    $request->target('/other');
 
 =head2 scheme
 
-Returns the URI scheme associated with the request, or C<undef> when none is
-represented. Passing a valid URI scheme sets it; passing C<undef> clears it.
-Uniform never infers a scheme from the target or transport.
+Returns the request scheme, such as C<http> or C<https>, or C<undef> when no
+scheme is represented.
+
+Uniform does not invent a scheme from the transport or target.
 
 =head2 authority
 
-Returns the request authority, or C<undef> when none is represented. Passing an
-authority sets it; passing C<undef> clears it. Uniform does not synthesize an
-authority from Host or from the request target.
+Returns the request authority, such as:
 
-The canonical class deliberately performs only minimal byte-level validation:
-the value must be nonempty and must not contain controls, spaces, C</>, C<?>,
-or C<#>. It does not parse hosts, ports, userinfo, IP literals, or percent
-escapes, and it does not apply protocol-specific authority rules.
+    example.com
+    example.com:8443
+
+or C<undef> when none is represented.
+
+Uniform does not invent an authority from C<Host> or the request target.
 
 =head2 target_is_exact
 
-Returns true for canonical requests because C<target()> is exactly the value
-supplied by the caller. An adapter returns false when it had to reconstruct a
-target from decomposed framework data. An HTTP/2 or HTTP/3 adapter may return
-true for ordinary CONNECT when it copies the exact C<:authority> bytes into
-C<target()> as described above.
+Returns true for canonical Uniform requests because C<target()> contains the
+exact value supplied by the caller.
+
+Adapters return false when they had to reconstruct a target from separate
+framework values.
+
+=head1 HTTP/2 AND HTTP/3
+
+HTTP/2 and HTTP/3 carry request routing information in pseudo-fields.
+
+For normal requests, an adapter can expose exact C<:path> bytes through
+C<target()>.
+
+Ordinary CONNECT has no C<:path>. In that case the exact C<:authority> bytes
+are exposed as the authority-form target:
+
+    method    => 'CONNECT',
+    target    => 'example.com:443',
+    authority => 'example.com:443',
+
+Uniform preserves the meaning of those values but does not implement HTTP/2 or
+HTTP/3 framing or validation.
 
 =head1 INHERITED METHODS
 
-See L<Uniform::HTTP::Message> for headers, body state, version, capability
-reporting, and mutation.
+Headers, bodies, versions, mutability, and completeness come from
+L<Uniform::HTTP::Message>.
+
+=head1 SEE ALSO
+
+L<Uniform::HTTP>, L<Uniform::HTTP::Message>,
+L<Uniform::HTTP::Response>.
 
 =head1 AUTHOR
 
