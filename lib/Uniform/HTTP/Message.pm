@@ -10,7 +10,13 @@ my $TOKEN_RE = qr/\A[!\#\$%&'*+\-.\^_`|~0-9A-Za-z]+\z/;
 
 sub new {
     my ($class, @args) = @_;
-    my $args = _named_args('new', @args);
+    return _new_common($class, _named_args('new', @args));
+}
+
+# Shared constructor after named arguments have been checked. Core Request and
+# Response pass only common fields here; subclasses still use Message->new.
+sub _new_common {
+    my ($class, $args) = @_;
 
     for my $name (keys %$args) {
         croak "unknown constructor option '$name'"
@@ -399,16 +405,16 @@ sub _assert_mutable {
 
 sub _assert_initial_mutable {
     my ($self) = @_;
+    return if $self->initial_is_mutable;
     $self->_assert_mutable;
-    croak 'initial message data is immutable' unless $self->initial_is_mutable;
-    return;
+    croak 'initial message data is immutable';
 }
 
 sub _assert_trailers_mutable {
     my ($self) = @_;
+    return if $self->trailers_are_mutable;
     $self->_assert_mutable;
-    croak 'trailers are immutable' unless $self->trailers_are_mutable;
-    return;
+    croak 'trailers are immutable';
 }
 
 sub _named_args {
