@@ -405,16 +405,16 @@ sub _assert_mutable {
 
 sub _assert_initial_mutable {
     my ($self) = @_;
-    return if $self->initial_is_mutable;
     $self->_assert_mutable;
-    croak 'initial message data is immutable';
+    croak 'initial message data is immutable' unless $self->initial_is_mutable;
+    return;
 }
 
 sub _assert_trailers_mutable {
     my ($self) = @_;
-    return if $self->trailers_are_mutable;
     $self->_assert_mutable;
-    croak 'trailers are immutable';
+    croak 'trailers are immutable' unless $self->trailers_are_mutable;
+    return;
 }
 
 sub _named_args {
