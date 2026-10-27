@@ -40,3 +40,4 @@ t/17-modern-requests.t
 t/18-adapter-capabilities.t
 t/19-fast-path.t
 t/20-native-contract.t
+t/21-constructor-parity.t
