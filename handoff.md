@@ -1,3 +1,38 @@
+# ACTIVE Stage B constructor experiment - 2026-10-26
+
+Branch: feature/shared-constructor-cost, based on main
+670c8eed8aeae6edc6d5e15ff9d8be5e7346c8b5.
+Source change commits: 2d8534a, 54c87b7, 34f88ba, 12f2b88.
+Latest benchmark/CI commit: cd60770ccd0394763f9f11cb09d62a4efdc9e182.
+No main, tags, releases, versions or native ABI changed.
+
+A shared internal Message::_new_common receives already parsed options
+from only the exact canonical Request and Response classes. Subclasses
+retain inherited construction. Every public field still uses its existing
+setter validation, mutability checks and copy rules. An attempted general
+mutability assertion simplification was explicitly reverted to preserve
+potential subclass overrides. t/21-constructor-parity.t protects
+validation, headers, body and subclass virtual setters; MANIFEST updated.
+
+Verified CI https://github.com/haxmeister/perl-Uniform-HTTP/actions/runs/40435483897
+SUCCESS, three Perl jobs (5.16, 5.38, latest), distribution/disttest,
+pure Perl checks, POD and native consumer fixture.
+Paired experiment on same hosted runner:
+https://github.com/haxmeister/perl-Uniform-HTTP/actions/runs/40435483969
+SUCCESS. Published CPAN 0.06 Response medians: 8.2282 / 8.2750
+CPU us/object; experimental: 7.5851 / 7.5457. Request medians
+8.4698 / 8.8176 baseline; 8.4023 / 8.3839 experimental.
+Each sample uses 100k creations and process CPU, five repetitions
+in alternating baseline/feature/feature/baseline order. This measures
+constructor cost only, NOT a socket or engine throughput gain.
+
+Next: evaluate combined independent Unblock::HTTP1 experiment, then run
+full Linux::Event::HTTP integration and paired real-socket tests before
+considering any upstream merge/release. Keep Uniform compiler-free,
+pure Perl, public contract and C ABI unchanged. HTTP1 Stage B OPEN.
+
+---
+
 # Uniform::HTTP native FastPath handoff
 
 ## Scope and baseline
