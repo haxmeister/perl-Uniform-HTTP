@@ -1,0 +1,36 @@
+name: constructor-cost-experiment
+
+on:
+  push:
+    branches:
+      - feature/shared-constructor-cost
+    paths:
+      - 'lib/Uniform/HTTP/**'
+      - 'author/bench-constructor-cost.pl'
+      - '.github/workflows/constructor-cost.yml'
+  workflow_dispatch:
+
+jobs:
+  constructor-paired:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+
+      - name: Install published Uniform
+        run: cpanm --notest Uniform::HTTP@0.06
+
+      - name: Alternating published and feature constructor costs
+        run: |
+          echo 'Published 0.06, first'
+          perl author/bench-constructor-cost.pl
+          echo 'Feature, first'
+          perl -Ilib author/bench-constructor-cost.pl
+          echo 'Feature, second'
+          perl -Ilib author/bench-constructor-cost.pl
+          echo 'Published 0.06, second'
+          perl author/bench-constructor-cost.pl
