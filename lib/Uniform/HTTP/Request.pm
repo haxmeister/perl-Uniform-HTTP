@@ -27,12 +27,16 @@ sub new {
     croak 'method is required' unless exists $args->{method};
     croak 'target is required' unless exists $args->{target};
 
-    my @common;
+    my %common;
     for my $name (qw(version headers trailers body)) {
-        push @common, $name => $args->{$name} if exists $args->{$name};
+        $common{$name} = $args->{$name} if exists $args->{$name};
     }
 
-    my $self = $class->SUPER::new(@common);
+    # Only the exact built-in class skips the second named-argument copy.
+    # Derived classes retain the normal inherited constructor call.
+    my $self = $class eq __PACKAGE__
+        ? Uniform::HTTP::Message::_new_common($class, \%common)
+        : $class->SUPER::new(%common);
     $self->method($args->{method});
     $self->target($args->{target});
     $self->scheme($args->{scheme}) if exists $args->{scheme};
